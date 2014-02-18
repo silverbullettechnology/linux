@@ -435,6 +435,11 @@ static ssize_t ad9361_dig_interface_timing_analysis(struct ad9361_rf_phy *phy,
 	u8 field[16][16];
 	u8 rx;
 
+	if ( ! conv->indio_dev ) {
+		len += snprintf(buf + len, buflen, "No indio_dev: not run\n");
+		return len;
+	}
+
 	rx = ad9361_spi_read(phy->spi, REG_RX_CLOCK_DATA_DELAY);
 
 	ad9361_bist_prbs(phy, BIST_INJ_RX);
@@ -4281,19 +4286,45 @@ static struct clk *ad9361_clk_register(struct ad9361_rf_phy *phy, const char *na
 	struct clk_init_data init;
 	struct clk *clk;
 
+	char *full_name;
+	char *full_parent_name = NULL;
+
 	clk_priv = kmalloc(sizeof(*clk_priv), GFP_KERNEL);
 	if (!clk_priv) {
 		pr_err("%s: could not allocate fixed factor clk\n", __func__);
+		kfree(full_name);
+		kfree(full_parent_name);
 		return ERR_PTR(-ENOMEM);
 	}
+
+	full_name = kmalloc(strlen(name) + 20, GFP_KERNEL);
+	if ( !full_name ) {
+		pr_err("%s: could not allocate temp clk name\n", __func__);
+		kfree(clk_priv);
+		return ERR_PTR(-ENOMEM);
+	}
+	sprintf(full_name, "%s_%p", name, phy);
+	init.name = full_name;
+
+	if ( strcmp(parent_name, "ad9361_ext_refclk") ) {
+		full_parent_name = kmalloc(strlen(parent_name) + 20, GFP_KERNEL);
+		if ( !full_parent_name ) {
+			pr_err("%s: could not allocate temp clk names\n", __func__);
+			kfree(full_name);
+			kfree(clk_priv);
+			return ERR_PTR(-ENOMEM);
+		}
+		sprintf(full_parent_name, "%s_%p", parent_name, phy);
+		init.parent_names = &full_parent_name;
+	}
+	else
+		init.parent_names = &parent_name;
 
 	/* struct refclk_scale assignments */
 	clk_priv->source = source;
 	clk_priv->hw.init = &init;
 	clk_priv->spi = phy->spi;
 	clk_priv->phy = phy;
-
-	init.name = name;
 
 	switch (source) {
 	case BBPLL_CLK:
@@ -4308,11 +4339,13 @@ static struct clk *ad9361_clk_register(struct ad9361_rf_phy *phy, const char *na
 	}
 
 	init.flags = flags;
-	init.parent_names = &parent_name;
 	init.num_parents = 1;
 
 	clk = clk_register(&phy->spi->dev, &clk_priv->hw);
 	phy->clk_data.clks[source] = clk;
+
+	kfree(full_name);
+	kfree(full_parent_name);
 
 	if (IS_ERR(clk))
 		kfree(clk_priv);
@@ -4345,6 +4378,7 @@ static int ad9361_clks_resync(struct ad9361_rf_phy *phy)
 static int register_clocks(struct ad9361_rf_phy *phy)
 {
 	u32 flags = CLK_GET_RATE_NOCACHE;
+	int i, c;
 
 	phy->clk_data.clks = devm_kzalloc(&phy->spi->dev,
 					 sizeof(*phy->clk_data.clks) *
@@ -4439,6 +4473,21 @@ static int register_clocks(struct ad9361_rf_phy *phy)
 					flags | CLK_IGNORE_UNUSED,
 					TX_RFPLL);
 
+	c = 0;
+	for ( i = 0; i < NUM_AD9361_CLKS; i++ )
+		if ( !phy->clks[i] || IS_ERR(phy->clks[i]) )
+			c++;
+
+	if ( c ) {
+		pr_err("%s: %d clock(s) failed to init, stop.\n", __func__, c);
+		for ( i = 0; i < NUM_AD9361_CLKS; i++ )
+			if ( phy->clks[i] && !IS_ERR(phy->clks[i]) ) {
+				clk_disable_unprepare(phy->clks[i]);
+				kfree(phy->clks[i]);
+			}
+
+		return -EINVAL;
+	}
 
 	return 0;
 }
@@ -6464,6 +6513,7 @@ static int ad9361_probe(struct spi_device *spi)
 	if (phy->pdata == NULL)
 		return -EINVAL;
 
+	dev_info(&spi->dev, "RESET GPIO %d", phy->pdata->gpio_resetb);
 	if (gpio_is_valid(phy->pdata->gpio_resetb)) {
 		ret = devm_gpio_request_one(&spi->dev, phy->pdata->gpio_resetb,
 			GPIOF_OUT_INIT_HIGH, "AD9361 RESETB");
@@ -6492,6 +6542,7 @@ static int ad9361_probe(struct spi_device *spi)
 	ad9361_reset(phy);
 
 	ret = ad9361_spi_read(spi, REG_PRODUCT_ID);
+dev_info(&spi->dev, "%s : PRODUCT_ID 0x%02x", __func__, ret);
 	if ((ret & PRODUCT_ID_MASK) != PRODUCT_ID_9361) {
 		dev_err(&spi->dev, "%s : Unsupported PRODUCT_ID 0x%X",
 			__func__, ret);
