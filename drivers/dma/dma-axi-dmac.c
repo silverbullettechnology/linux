@@ -518,8 +518,12 @@ static int axi_dmac_probe(struct platform_device *pdev)
 	struct axi_dmac *dmac;
 	struct resource *res;
 	u32 chan_type;
+	u32 device_id;
+	u32 buswidth;
 	int ret;
+#ifdef SPEED_TEST
 	int i;
+#endif
 
 	dmac = devm_kzalloc(&pdev->dev, sizeof(*dmac), GFP_KERNEL);
 	if (!dmac)
@@ -566,6 +570,14 @@ static int axi_dmac_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
+	buswidth = 0;
+	of_property_read_u32(of_chan, "sbt,buswidth", &buswidth);
+	if ( !buswidth || (buswidth & 0x07) ) {
+		pr_warn("empty/zero/invalid sbt,buswidth %u interpreted as 64\n", buswidth);
+		buswidth = 64;
+	}
+	pr_debug("buswidth %u -> copy_align %u\n", buswidth, ilog2(buswidth >> 3));
+
 	dma_dev = &dmac->dma_dev;
 	dma_cap_set(DMA_SLAVE, dma_dev->cap_mask);
 	dma_cap_set(DMA_CYCLIC, dma_dev->cap_mask);
@@ -583,6 +595,15 @@ static int axi_dmac_probe(struct platform_device *pdev)
 
 	dmac->chan.vchan.desc_free = axi_dmac_desc_free;
 	vchan_init(&dmac->chan.vchan, dma_dev);
+	if ( !dmac->chan.vchan.chan.device )
+		pr_warn("Still no dmac->chan.vchan.chan.device...\n");
+	else
+		dmac->chan.vchan.chan.device->copy_align = ilog2(buswidth >> 3);
+
+	device_id = 0;
+	of_property_read_u32(of_chan, "sbt,device-id", &device_id);
+	if ( device_id )
+		dmac->chan.vchan.chan.private = (void *)device_id;
 
 	ret = dma_async_device_register(dma_dev);
 	if (ret)
