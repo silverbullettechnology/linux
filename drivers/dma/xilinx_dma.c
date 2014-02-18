@@ -124,6 +124,9 @@
 #define XILINX_DMA_RESET_LOOP            1000000
 #define XILINX_DMA_HALT_LOOP             1000000
 
+/* Device Id in the private structure */
+#define XILINX_DMA_DEVICE_ID_SHIFT  28
+
 /* IO accessors
  */
 #define DMA_OUT(addr, val)  (iowrite32(val, addr))
@@ -1316,6 +1319,7 @@ static int xilinx_dma_chan_probe(struct xilinx_dma_device *xdev,
 {
 	struct xilinx_dma_chan *chan;
 	u32 width = 0;
+	u32 device_id = 0;
 	int ret;
 
 	/* alloc channel */
@@ -1405,8 +1409,10 @@ static int xilinx_dma_chan_probe(struct xilinx_dma_device *xdev,
 	/* Used by dmatest channel matching in slave transfers
 	 * Can change it to be a structure to have more matching information
 	 */
+	of_property_read_u32(node, "xlnx,device-id", &device_id);
 	chan->common.private = (chan->direction & 0xFF) |
-		(chan->feature & XILINX_DMA_IP_MASK);
+		(chan->feature & XILINX_DMA_IP_MASK) | 
+		(device_id << XILINX_DMA_DEVICE_ID_SHIFT);
 
 	if (!chan->has_DRE)
 		xdev->common.copy_align = ilog2(width);
@@ -1485,7 +1491,7 @@ static int xilinx_dma_of_probe(struct platform_device *pdev)
 		if (value) {
 			xdev->feature |= XILINX_DMA_FTR_HAS_SG;
 			if (be32_to_cpup(value) == 1)
-				xdev->feature = XILINX_DMA_FTR_STSCNTRL_STRM;
+				xdev->feature |= XILINX_DMA_FTR_STSCNTRL_STRM;
 		}
 
 		dma_cap_set(DMA_SLAVE, xdev->common.cap_mask);
