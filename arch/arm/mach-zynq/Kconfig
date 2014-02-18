@@ -15,6 +15,7 @@ config ARCH_ZYNQ
 	select MIGHT_HAVE_PCI
 	select CADENCE_TTC_TIMER
 	select GENERIC_ALLOCATOR
+	select ARM_HAS_SG_CHAIN
 	help
 	  Support for Xilinx Zynq ARM Cortex A9 Platform
 
