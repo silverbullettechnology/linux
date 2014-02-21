@@ -455,6 +455,7 @@ static int spi_gpio_probe(struct platform_device *pdev)
 	if (use_of) {
 		int i;
 		struct device_node *np = pdev->dev.of_node;
+		u32 bus_num;
 
 		/*
 		 * In DT environments, take the CS GPIO from the "cs-gpios"
@@ -464,6 +465,9 @@ static int spi_gpio_probe(struct platform_device *pdev)
 		for (i = 0; i < SPI_N_CHIPSEL; i++)
 			spi_gpio->cs_gpios[i] =
 				of_get_named_gpio(np, "cs-gpios", i);
+
+		if ( !of_property_read_u32(pdev->dev.of_node, "bus-num", &bus_num) )
+			master->bus_num = bus_num & 0xFFFF;
 	}
 #endif
 

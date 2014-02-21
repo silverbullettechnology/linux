@@ -664,6 +664,7 @@ static int zynq_spi_probe(struct platform_device *pdev)
 	struct zynq_spi *xspi;
 	struct resource *res;
 	unsigned long aper_clk_rate;
+	u32 bus_num;
 
 	master = spi_alloc_master(&pdev->dev, sizeof(*xspi));
 	if (master == NULL)
@@ -740,6 +741,9 @@ static int zynq_spi_probe(struct platform_device *pdev)
 	master->setup = zynq_spi_setup;
 	master->transfer = zynq_spi_transfer;
 	master->mode_bits = SPI_CPOL | SPI_CPHA;
+
+	if ( !of_property_read_u32(pdev->dev.of_node, "bus-num", &bus_num) )
+		master->bus_num = bus_num & 0xFFFF;
 
 	aper_clk_rate = clk_get_rate(xspi->aperclk) / 2 * 3;
 	if (aper_clk_rate > clk_get_rate(xspi->devclk))

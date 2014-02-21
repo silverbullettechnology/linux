@@ -1071,6 +1071,7 @@ static int zynq_qspi_probe(struct platform_device *pdev)
 	struct spi_master *master;
 	struct zynq_qspi *xqspi;
 	struct resource *res;
+	u32 bus_num;
 
 	master = spi_alloc_master(&pdev->dev, sizeof(*xqspi));
 	if (master == NULL)
@@ -1148,6 +1149,9 @@ static int zynq_qspi_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "couldn't determine num-chip-select\n");
 		goto clk_unreg_notif;
 	}
+
+	if ( !of_property_read_u32(pdev->dev.of_node, "bus-num", &bus_num) )
+		master->bus_num = bus_num & 0xFFFF;
 
 	master->setup = zynq_qspi_setup;
 	master->transfer = zynq_qspi_transfer;
