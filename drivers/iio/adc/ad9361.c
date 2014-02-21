@@ -91,7 +91,7 @@ struct ad9361_rf_phy {
 	struct clk 		*clks[NUM_AD9361_CLKS];
 	struct clk_onecell_data	clk_data;
 	struct ad9361_phy_platform_data *pdata;
-	struct ad9361_debugfs_entry debugfs_entry[125];
+	struct ad9361_debugfs_entry debugfs_entry[140];
 	struct bin_attribute 	bin;
 	struct iio_dev 		*indio_dev;
 	struct work_struct 	work;
@@ -125,6 +125,9 @@ struct ad9361_rf_phy {
 	u16 			auxdac1_value;
 	u16 			auxdac2_value;
 };
+
+#define ad9361_check_debugfs_entry(phy,idx) \
+	BUG_ON((idx) >= ARRAY_SIZE(phy->debugfs_entry));
 
 struct refclk_scale {
 	struct clk_hw		hw;
@@ -5911,6 +5914,7 @@ static int ad9361_register_debugfs(struct iio_dev *indio_dev)
 		return -ENODEV;
 
 
+	ad9361_check_debugfs_entry(phy, phy->ad9361_debugfs_entry_index);
 	phy->debugfs_entry[phy->ad9361_debugfs_entry_index++] =
 		(struct ad9361_debugfs_entry) {
 		.propname = "initialize",
@@ -5918,6 +5922,7 @@ static int ad9361_register_debugfs(struct iio_dev *indio_dev)
 		.cmd = DBGFS_INIT,
 	};
 
+	ad9361_check_debugfs_entry(phy, phy->ad9361_debugfs_entry_index);
 	phy->debugfs_entry[phy->ad9361_debugfs_entry_index++] =
 		(struct ad9361_debugfs_entry) {
 		.propname = "loopback",
@@ -5925,6 +5930,7 @@ static int ad9361_register_debugfs(struct iio_dev *indio_dev)
 		.cmd = DBGFS_LOOPBACK,
 	};
 
+	ad9361_check_debugfs_entry(phy, phy->ad9361_debugfs_entry_index);
 	phy->debugfs_entry[phy->ad9361_debugfs_entry_index++] =
 		(struct ad9361_debugfs_entry) {
 		.propname = "bist_prbs",
@@ -5932,6 +5938,7 @@ static int ad9361_register_debugfs(struct iio_dev *indio_dev)
 		.cmd = DBGFS_BIST_PRBS,
 	};
 
+	ad9361_check_debugfs_entry(phy, phy->ad9361_debugfs_entry_index);
 	phy->debugfs_entry[phy->ad9361_debugfs_entry_index++] =
 		(struct ad9361_debugfs_entry) {
 		.propname = "bist_tone",
@@ -5939,6 +5946,7 @@ static int ad9361_register_debugfs(struct iio_dev *indio_dev)
 		.cmd = DBGFS_BIST_TONE,
 	};
 
+	ad9361_check_debugfs_entry(phy, phy->ad9361_debugfs_entry_index);
 	phy->debugfs_entry[phy->ad9361_debugfs_entry_index++] =
 		(struct ad9361_debugfs_entry) {
 		.propname = "bist_timing_analysis",
@@ -5946,6 +5954,7 @@ static int ad9361_register_debugfs(struct iio_dev *indio_dev)
 		.cmd = DBGFS_BIST_DT_ANALYSIS,
 	};
 
+	ad9361_check_debugfs_entry(phy, phy->ad9361_debugfs_entry_index);
 	phy->debugfs_entry[phy->ad9361_debugfs_entry_index++] =
 		(struct ad9361_debugfs_entry) {
 		.propname = "gaininfo_rx1",
@@ -5953,6 +5962,7 @@ static int ad9361_register_debugfs(struct iio_dev *indio_dev)
 		.cmd = DBGFS_RXGAIN_1,
 	};
 
+	ad9361_check_debugfs_entry(phy, phy->ad9361_debugfs_entry_index);
 	phy->debugfs_entry[phy->ad9361_debugfs_entry_index++] =
 		(struct ad9361_debugfs_entry) {
 		.propname = "gaininfo_rx2",
@@ -5960,12 +5970,14 @@ static int ad9361_register_debugfs(struct iio_dev *indio_dev)
 		.cmd = DBGFS_RXGAIN_2,
 	};
 
-	for (i = 0; i < phy->ad9361_debugfs_entry_index; i++)
+	for (i = 0; i < phy->ad9361_debugfs_entry_index; i++) {
+		ad9361_check_debugfs_entry(phy, i);
 		d = debugfs_create_file(
 			phy->debugfs_entry[i].propname, 0644,
 			iio_get_debugfs_dentry(indio_dev),
 			&phy->debugfs_entry[i],
 			&ad9361_debugfs_reg_fops);
+	}
 	return 0;
 }
 
@@ -6024,6 +6036,7 @@ static int __ad9361_of_get_u32(struct iio_dev *indio_dev,
 		}
 	}
 
+	ad9361_check_debugfs_entry(phy, phy->ad9361_debugfs_entry_index);
 	phy->debugfs_entry[phy->ad9361_debugfs_entry_index++] =
 		(struct ad9361_debugfs_entry) {
 		.out_value = out_value,
@@ -6043,6 +6056,7 @@ static void ad9361_of_get_bool(struct iio_dev *indio_dev, struct device_node *np
 	struct ad9361_rf_phy *phy = iio_priv(indio_dev);
 	*out_value = of_property_read_bool(np, propname);
 
+	ad9361_check_debugfs_entry(phy, phy->ad9361_debugfs_entry_index);
 	phy->debugfs_entry[phy->ad9361_debugfs_entry_index++] =
 		(struct ad9361_debugfs_entry) {
 		.out_value = out_value,
@@ -6573,7 +6587,7 @@ dev_info(&spi->dev, "%s : PRODUCT_ID 0x%02x", __func__, ret);
 
 	sysfs_bin_attr_init(&phy->bin);
 	phy->bin.attr.name = "filter_fir_config";
-	phy->bin.attr.mode = S_IWUSR;
+	phy->bin.attr.mode = S_IRUGO | S_IWUSR;
 	phy->bin.write = ad9361_fir_bin_write;
 	phy->bin.read = ad9361_fir_bin_read;
 	phy->bin.size = 4096;
