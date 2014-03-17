@@ -314,6 +314,11 @@ static int ad9361_hdl_loopback(struct ad9361_rf_phy *phy, bool enable)
 	struct axiadc_state *st = iio_priv(conv->indio_dev);
 	unsigned reg, chan;
 
+	if ( ! conv->indio_dev ) {
+		dev_err(&phy->spi->dev, "No indio_dev: not run");
+		return -ENODEV;
+	}
+
 	for (chan = 0; chan < conv->chip_info->num_channels; chan++) {
 		reg = axiadc_read(st, 0x4414 + (chan) * 0x40);
 		/* DAC_LB_ENB If set enables loopback of receive data */
