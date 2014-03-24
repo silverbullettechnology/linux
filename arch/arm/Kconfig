@@ -263,7 +263,7 @@ config NEED_MACH_MEMORY_H
 config PHYS_OFFSET
 	hex "Physical address of main memory" if MMU
 	depends on !ARM_PATCH_PHYS_VIRT && !NEED_MACH_MEMORY_H
-	default DRAM_BASE if !MMU
+	default 0
 	help
 	  Please provide the physical address corresponding to the
 	  location of main memory in your system.
@@ -872,6 +872,34 @@ config ARCH_OMAP1
 	select NEED_MACH_MEMORY_H
 	help
 	  Support for older TI OMAP1 (omap7xx, omap15xx or omap16xx)
+
+config ARCH_ZYNQ
+	bool "Xilinx Zynq ARM Cortex A9 Platform" 
+	select ARCH_HAS_CPUFREQ
+	select ARCH_HAS_OPP
+	select ARCH_REQUIRE_GPIOLIB
+	select ARM_AMBA
+	select ARM_GIC
+	select ARM_HAS_SG_CHAIN
+	select CACHE_L2X0
+	select CADENCE_TTC_TIMER
+	select COMMON_CLK
+	select CPU_V7
+	select DEBUG_UNCOMPRESS
+	select GENERIC_ALLOCATOR
+	select GENERIC_CLOCKEVENTS
+	select HAVE_ARM_SCU if SMP
+	select HAVE_ARM_TWD if SMP
+	select HAVE_CLK
+	select HAVE_SMP
+	select ICST
+	select MIGHT_HAVE_CACHE_L2X0
+	select MIGHT_HAVE_PCI
+	select MULTI_IRQ_HANDLER
+	select SPARSE_IRQ
+	select USE_OF
+	help
+	  Support for Xilinx Zynq ARM Cortex A9 Platform
 
 endchoice
 
