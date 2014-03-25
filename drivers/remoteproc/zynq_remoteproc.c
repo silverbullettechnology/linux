@@ -266,6 +266,7 @@ static int zynq_remoteproc_probe(struct platform_device *pdev)
 		goto irq_fault;
 	}
 
+	clear_ipi_handler(local->ipino);
 	ret = set_ipi_handler(local->ipino, ipi_kick, "Firmware kick");
 	if (ret) {
 		dev_err(&pdev->dev, "IPI handler already registered\n");
