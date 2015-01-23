@@ -24,6 +24,7 @@
 #include <linux/spi/spi.h>
 #include <linux/spinlock.h>
 #include <linux/workqueue.h>
+#include <linux/gpio.h>
 
 /*
  * Name of this driver
@@ -170,19 +171,28 @@ static void zynq_spi_chipselect(struct spi_device *spi, int is_on)
 
 	spin_lock_irqsave(&xspi->ctrl_reg_lock, flags);
 
-	ctrl_reg = zynq_spi_read(xspi->regs + ZYNQ_SPI_CR_OFFSET);
+	if ( spi->cs_gpio >= 0 ) {
+		int mode = spi->mode & SPI_CS_HIGH;
 
-	if (is_on) {
-		/* Select the slave */
-		ctrl_reg &= ~ZYNQ_SPI_CR_SSCTRL_MASK;
-		ctrl_reg |= (((~(0x0001 << spi->chip_select)) << 10) &
-				ZYNQ_SPI_CR_SSCTRL_MASK);
+		if ( is_on )
+			gpio_set_value(spi->cs_gpio, !!mode);
+		else
+			gpio_set_value(spi->cs_gpio, !mode);
 	} else {
-		/* Deselect the slave */
-		ctrl_reg |= ZYNQ_SPI_CR_SSCTRL_MASK;
-	}
+		ctrl_reg = zynq_spi_read(xspi->regs + ZYNQ_SPI_CR_OFFSET);
 
-	zynq_spi_write(xspi->regs + ZYNQ_SPI_CR_OFFSET, ctrl_reg);
+		if (is_on) {
+			/* Select the slave */
+			ctrl_reg &= ~ZYNQ_SPI_CR_SSCTRL_MASK;
+			ctrl_reg |= (((~(0x0001 << spi->chip_select)) << 10) &
+					ZYNQ_SPI_CR_SSCTRL_MASK);
+		} else {
+			/* Deselect the slave */
+			ctrl_reg |= ZYNQ_SPI_CR_SSCTRL_MASK;
+		}
+
+		zynq_spi_write(xspi->regs + ZYNQ_SPI_CR_OFFSET, ctrl_reg);
+	}
 
 	spin_unlock_irqrestore(&xspi->ctrl_reg_lock, flags);
 }
@@ -278,6 +288,29 @@ static int zynq_spi_setup(struct spi_device *spi)
 {
 	if (!spi->max_speed_hz)
 		return -EINVAL;
+
+	if ( spi->cs_gpio >= 0 && !spi->controller_data ) {
+		int ret, value;
+
+		if ( !gpio_is_valid(spi->cs_gpio) ) {
+			pr_err("%s: cs_gpio %d is not valid\n",
+			       dev_name(&spi->dev), spi->cs_gpio);
+			return -EINVAL;
+		}
+
+		ret = gpio_request(spi->cs_gpio, dev_name(&spi->dev));
+		if ( ret ) {
+			pr_err("%s: cs_gpio %d request failed: %d\n",
+			       dev_name(&spi->dev), spi->cs_gpio, ret);
+			return ret;
+		}
+
+		value = !(spi->mode & SPI_CS_HIGH);
+		spi->controller_data = spi;
+		gpio_direction_output(spi->cs_gpio, value);
+		pr_debug("%s: cs_gpio %d assigned, set output, init to %d\n",
+		         dev_name(&spi->dev), spi->cs_gpio, value);
+	}
 
 	if (!spi->bits_per_word)
 		spi->bits_per_word = 8;
@@ -551,6 +584,18 @@ static int zynq_spi_transfer(struct spi_device *spi,
 	return 0;
 }
 
+static void zynq_spi_cleanup(struct spi_device *spi)
+{
+	if ( !spi->controller_data )
+		return;
+
+	pr_debug("%s: cs_gpio %d, gpio_free\n",
+	         dev_name(&spi->dev), spi->cs_gpio);
+	spi->controller_data = NULL;
+	gpio_free(spi->cs_gpio);
+}
+
+
 /**
  * zynq_spi_start_queue - Starts the queue of the SPI driver
  * @xspi:	Pointer to the zynq_spi structure
@@ -740,6 +785,7 @@ static int zynq_spi_probe(struct platform_device *pdev)
 	}
 	master->setup = zynq_spi_setup;
 	master->transfer = zynq_spi_transfer;
+	master->cleanup = zynq_spi_cleanup;
 	master->mode_bits = SPI_CPOL | SPI_CPHA;
 
 	if ( !of_property_read_u32(pdev->dev.of_node, "bus-num", &bus_num) )
