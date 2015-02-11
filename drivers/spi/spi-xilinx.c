@@ -332,6 +332,7 @@ static int xilinx_spi_probe(struct platform_device *pdev)
 	struct spi_master *master;
 	u32 tmp;
 	u8 i;
+	u32 bus_num;
 
 	pdata = dev_get_platdata(&pdev->dev);
 	if (pdata) {
@@ -375,6 +376,8 @@ static int xilinx_spi_probe(struct platform_device *pdev)
 		ret = PTR_ERR(xspi->regs);
 		goto put_master;
 	}
+	if ( !of_property_read_u32(pdev->dev.of_node, "bus-num", &bus_num) )
+		master->bus_num = bus_num & 0xFFFF;
 
 	master->bus_num = pdev->id;
 	master->num_chipselect = num_cs;
