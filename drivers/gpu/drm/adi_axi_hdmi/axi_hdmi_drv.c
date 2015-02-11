@@ -59,6 +59,8 @@ static int axi_hdmi_load(struct drm_device *dev, unsigned long flags)
 	struct drm_encoder *encoder;
 	int ret;
 
+	private->drm_dev = dev;
+
 	dev->dev_private = private;
 
 	drm_mode_config_init(dev);
@@ -122,10 +124,10 @@ static const struct file_operations axi_hdmi_driver_fops = {
 };
 
 static struct drm_driver axi_hdmi_driver = {
-	.driver_features	= DRIVER_BUS_PLATFORM |
-				  DRIVER_MODESET | DRIVER_GEM,
+	.driver_features	= DRIVER_MODESET | DRIVER_GEM,
 	.load			= axi_hdmi_load,
 	.unload			= axi_hdmi_unload,
+	.set_busid		= drm_platform_set_busid,
 	.lastclose		= axi_hdmi_lastclose,
 	.gem_free_object	= drm_gem_cma_free_object,
 	.gem_vm_ops		= &drm_gem_cma_vm_ops,
@@ -165,13 +167,15 @@ static int axi_hdmi_platform_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	private->base = devm_request_and_ioremap(&pdev->dev, res);
-	if (!private->base)
-		return -EBUSY;
+	private->base = devm_ioremap_resource(&pdev->dev, res);
+	if (IS_ERR(private->base))
+		return PTR_ERR(private->base);
 
 	private->hdmi_clock = devm_clk_get(&pdev->dev, NULL);
-	if (IS_ERR(private->hdmi_clock))
+	if (IS_ERR(private->hdmi_clock)) {
+		printk("%s:%s[%d]\n", __FILE__, __func__, __LINE__);
 		return -EPROBE_DEFER;
+	}
 
 	slave_node = of_parse_phandle(np, "encoder-slave", 0);
 	if (!slave_node)
@@ -189,12 +193,16 @@ static int axi_hdmi_platform_probe(struct platform_device *pdev)
 	private->encoder_slave = of_find_i2c_device_by_node(slave_node);
 	of_node_put(slave_node);
 
-	if (!private->encoder_slave || !private->encoder_slave->dev.driver)
+	if (!private->encoder_slave || !private->encoder_slave->dev.driver) {
+		printk("%s:%s[%d]\n", __FILE__, __func__, __LINE__);
 		return -EPROBE_DEFER;
+	}
 
 	private->dma = dma_request_slave_channel(&pdev->dev, "video");
-	if (private->dma == NULL)
+	if (private->dma == NULL) {
+		printk("%s:%s[%d]\n", __FILE__, __func__, __LINE__);
 		return -EPROBE_DEFER;
+	}
 
 	platform_set_drvdata(pdev, private);
 
@@ -204,7 +212,8 @@ static int axi_hdmi_platform_probe(struct platform_device *pdev)
 static int axi_hdmi_platform_remove(struct platform_device *pdev)
 {
 	struct axi_hdmi_private *private = platform_get_drvdata(pdev);
-	drm_platform_exit(&axi_hdmi_driver, pdev);
+
+	drm_put_dev(private->drm_dev);
 	dma_release_channel(private->dma);
 	return 0;
 }

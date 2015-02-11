@@ -92,16 +92,15 @@ static inline u32 arch_timer_get_cntfrq(void)
 	return val;
 }
 
-static inline void arch_counter_set_user_access(void)
+static inline u32 arch_timer_get_cntkctl(void)
 {
 	u32 cntkctl;
-
-	/* Disable user access to the timers and the physical counter. */
 	asm volatile("mrs	%0, cntkctl_el1" : "=r" (cntkctl));
-	cntkctl &= ~((3 << 8) | (1 << 0));
+	return cntkctl;
+}
 
-	/* Enable user access to the virtual counter and frequency. */
-	cntkctl |= (1 << 1);
+static inline void arch_timer_set_cntkctl(u32 cntkctl)
+{
 	asm volatile("msr	cntkctl_el1, %0" : : "r" (cntkctl));
 }
 

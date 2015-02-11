@@ -96,6 +96,7 @@
  * - Code works, detects all the partitions.
  *
  ************************************************************/
+#include <linux/kernel.h>
 #include <linux/crc32.h>
 #include <linux/ctype.h>
 #include <linux/math64.h>
@@ -120,7 +121,7 @@ __setup("gpt", force_gpt_fn);
 /**
  * efi_crc32() - EFI version of crc32 function
  * @buf: buffer to calculate crc32 of
- * @len - length of buf
+ * @len: length of buf
  *
  * Description: Returns EFI-style CRC32 value for @buf
  * 
@@ -239,10 +240,10 @@ done:
 
 /**
  * read_lba(): Read bytes from disk, starting at given LBA
- * @state
- * @lba
- * @buffer
- * @size_t
+ * @state: disk parsed partitions
+ * @lba: the Logical Block Address of the partition table
+ * @buffer: destination buffer
+ * @count: bytes to read
  *
  * Description: Reads @count bytes from @state->bdev into @buffer.
  * Returns number of bytes read on success, 0 on error.
@@ -276,8 +277,8 @@ static size_t read_lba(struct parsed_partitions *state,
 
 /**
  * alloc_read_gpt_entries(): reads partition entries from disk
- * @state
- * @gpt - GPT header
+ * @state: disk parsed partitions
+ * @gpt: GPT header
  * 
  * Description: Returns ptes on success,  NULL on error.
  * Allocates space for PTEs based on information found in @gpt.
@@ -311,8 +312,8 @@ static gpt_entry *alloc_read_gpt_entries(struct parsed_partitions *state,
 
 /**
  * alloc_read_gpt_header(): Allocates GPT header, reads into it from disk
- * @state
- * @lba is the Logical Block Address of the partition table
+ * @state: disk parsed partitions
+ * @lba: the Logical Block Address of the partition table
  * 
  * Description: returns GPT header on success, NULL on error.   Allocates
  * and fills a GPT header starting at @ from @state->bdev.
@@ -339,10 +340,10 @@ static gpt_header *alloc_read_gpt_header(struct parsed_partitions *state,
 
 /**
  * is_gpt_valid() - tests one GPT header and PTEs for validity
- * @state
- * @lba is the logical block address of the GPT header to test
- * @gpt is a GPT header ptr, filled on return.
- * @ptes is a PTEs ptr, filled on return.
+ * @state: disk parsed partitions
+ * @lba: logical block address of the GPT header to test
+ * @gpt: GPT header ptr, filled on return.
+ * @ptes: PTEs ptr, filled on return.
  *
  * Description: returns 1 if valid,  0 on error.
  * If valid, returns pointers to newly allocated GPT header and PTEs.
@@ -460,8 +461,8 @@ static int is_gpt_valid(struct parsed_partitions *state, u64 lba,
 
 /**
  * is_pte_valid() - tests one PTE for validity
- * @pte is the pte to check
- * @lastlba is last lba of the disk
+ * @pte:pte to check
+ * @lastlba: last lba of the disk
  *
  * Description: returns 1 if valid,  0 on error.
  */
@@ -477,9 +478,10 @@ is_pte_valid(const gpt_entry *pte, const u64 lastlba)
 
 /**
  * compare_gpts() - Search disk for valid GPT headers and PTEs
- * @pgpt is the primary GPT header
- * @agpt is the alternate GPT header
- * @lastlba is the last LBA number
+ * @pgpt: primary GPT header
+ * @agpt: alternate GPT header
+ * @lastlba: last LBA number
+ *
  * Description: Returns nothing.  Sanity checks pgpt and agpt fields
  * and prints warnings on discrepancies.
  * 
@@ -571,9 +573,10 @@ compare_gpts(gpt_header *pgpt, gpt_header *agpt, u64 lastlba)
 
 /**
  * find_valid_gpt() - Search disk for valid GPT headers and PTEs
- * @state
- * @gpt is a GPT header ptr, filled on return.
- * @ptes is a PTEs ptr, filled on return.
+ * @state: disk parsed partitions
+ * @gpt: GPT header ptr, filled on return.
+ * @ptes: PTEs ptr, filled on return.
+ *
  * Description: Returns 1 if valid, 0 on error.
  * If valid, returns pointers to newly allocated GPT header and PTEs.
  * Validity depends on PMBR being valid (or being overridden by the
@@ -662,7 +665,7 @@ static int find_valid_gpt(struct parsed_partitions *state, gpt_header **gpt,
 
 /**
  * efi_partition(struct parsed_partitions *state)
- * @state
+ * @state: disk parsed partitions
  *
  * Description: called from check.c, if the disk contains GPT
  * partitions, sets up partition entries in the kernel.
@@ -715,8 +718,8 @@ int efi_partition(struct parsed_partitions *state)
 		efi_guid_unparse(&ptes[i].unique_partition_guid, info->uuid);
 
 		/* Naively convert UTF16-LE to 7 bits. */
-		label_max = min(sizeof(info->volname) - 1,
-				sizeof(ptes[i].partition_name));
+		label_max = min(ARRAY_SIZE(info->volname) - 1,
+				ARRAY_SIZE(ptes[i].partition_name));
 		info->volname[label_max] = 0;
 		while (label_count < label_max) {
 			u8 c = ptes[i].partition_name[label_count] & 0xff;

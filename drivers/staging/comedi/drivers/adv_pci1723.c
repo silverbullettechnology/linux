@@ -105,7 +105,7 @@ TODO:
 
 struct pci1723_private {
 	unsigned char da_range[8];	/* D/A output range for each channel */
-	short ao_data[8];	/* data output buffer */
+	unsigned short ao_data[8];	/* data output buffer */
 };
 
 /*
@@ -161,11 +161,10 @@ static int pci1723_ao_write_winsn(struct comedi_device *dev,
 				  struct comedi_insn *insn, unsigned int *data)
 {
 	struct pci1723_private *devpriv = dev->private;
-	int n, chan;
-	chan = CR_CHAN(insn->chanspec);
+	unsigned int chan = CR_CHAN(insn->chanspec);
+	int n;
 
 	for (n = 0; n < insn->n; n++) {
-
 		devpriv->ao_data[chan] = data[n];
 		outw(data[n], dev->iobase + PCI1723_DA(chan));
 	}
@@ -205,19 +204,16 @@ static int pci1723_dio_insn_config(struct comedi_device *dev,
 	return insn->n;
 }
 
-/*
-  digital i/o bits read/write
-*/
 static int pci1723_dio_insn_bits(struct comedi_device *dev,
 				 struct comedi_subdevice *s,
-				 struct comedi_insn *insn, unsigned int *data)
+				 struct comedi_insn *insn,
+				 unsigned int *data)
 {
-	if (data[0]) {
-		s->state &= ~data[0];
-		s->state |= (data[0] & data[1]);
+	if (comedi_dio_update_state(s, data))
 		outw(s->state, dev->iobase + PCI1723_WRITE_DIGITAL_OUTPUT_CMD);
-	}
+
 	data[1] = inw(dev->iobase + PCI1723_READ_DIGITAL_INPUT_DATA);
+
 	return insn->n;
 }
 
@@ -283,8 +279,6 @@ static int pci1723_auto_attach(struct comedi_device *dev,
 
 	pci1723_reset(dev);
 
-	dev_info(dev->class_dev, "%s attached\n", dev->board_name);
-
 	return 0;
 }
 
@@ -292,7 +286,7 @@ static void pci1723_detach(struct comedi_device *dev)
 {
 	if (dev->iobase)
 		pci1723_reset(dev);
-	comedi_pci_disable(dev);
+	comedi_pci_detach(dev);
 }
 
 static struct comedi_driver adv_pci1723_driver = {
@@ -309,7 +303,7 @@ static int adv_pci1723_pci_probe(struct pci_dev *dev,
 				      id->driver_data);
 }
 
-static DEFINE_PCI_DEVICE_TABLE(adv_pci1723_pci_table) = {
+static const struct pci_device_id adv_pci1723_pci_table[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_ADVANTECH, 0x1723) },
 	{ 0 }
 };

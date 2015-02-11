@@ -24,7 +24,7 @@
 #include <linux/export.h>
 #include <linux/module.h>
 #include <linux/of_device.h>
-#include <linux/opp.h>
+#include <linux/pm_opp.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/types.h>
@@ -114,4 +114,4 @@ module_platform_driver(generic_bL_platdrv);
 
 MODULE_AUTHOR("Viresh Kumar <viresh.kumar@linaro.org>");
 MODULE_DESCRIPTION("Generic ARM big LITTLE cpufreq driver via DT");
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");

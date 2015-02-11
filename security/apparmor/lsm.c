@@ -145,7 +145,7 @@ static int apparmor_capable(const struct cred *cred, struct user_namespace *ns,
 	if (!error) {
 		profile = aa_cred_profile(cred);
 		if (!unconfined(profile))
-			error = aa_capable(current, profile, cap, audit);
+			error = aa_capable(profile, cap, audit);
 	}
 	return error;
 }
@@ -668,7 +668,7 @@ static int param_set_aabool(const char *val, const struct kernel_param *kp);
 static int param_get_aabool(char *buffer, const struct kernel_param *kp);
 #define param_check_aabool param_check_bool
 static struct kernel_param_ops param_ops_aabool = {
-	.flags = KERNEL_PARAM_FL_NOARG,
+	.flags = KERNEL_PARAM_OPS_FL_NOARG,
 	.set = param_set_aabool,
 	.get = param_get_aabool
 };
@@ -685,7 +685,7 @@ static int param_set_aalockpolicy(const char *val, const struct kernel_param *kp
 static int param_get_aalockpolicy(char *buffer, const struct kernel_param *kp);
 #define param_check_aalockpolicy param_check_bool
 static struct kernel_param_ops param_ops_aalockpolicy = {
-	.flags = KERNEL_PARAM_FL_NOARG,
+	.flags = KERNEL_PARAM_OPS_FL_NOARG,
 	.set = param_set_aalockpolicy,
 	.get = param_get_aalockpolicy
 };
@@ -751,7 +751,7 @@ module_param_named(enabled, apparmor_enabled, bool, S_IRUGO);
 static int __init apparmor_enabled_setup(char *str)
 {
 	unsigned long enabled;
-	int error = strict_strtoul(str, 0, &enabled);
+	int error = kstrtoul(str, 0, &enabled);
 	if (!error)
 		apparmor_enabled = enabled ? 1 : 0;
 	return 1;

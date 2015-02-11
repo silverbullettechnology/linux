@@ -40,10 +40,6 @@
 
 static struct workqueue_struct *xcopy_wq = NULL;
 /*
- * From target_core_spc.c
- */
-extern void spc_parse_naa_6h_vendor_specific(struct se_device *, unsigned char *);
-/*
  * From target_core_device.c
  */
 extern struct mutex g_device_mutex;
@@ -74,7 +70,7 @@ static int target_xcopy_locate_se_dev_e4(struct se_cmd *se_cmd, struct xcopy_op 
 	unsigned char tmp_dev_wwn[XCOPY_NAA_IEEE_REGEX_LEN], *dev_wwn;
 	int rc;
 
-	if (src == true)
+	if (src)
 		dev_wwn = &xop->dst_tid_wwn[0];
 	else
 		dev_wwn = &xop->src_tid_wwn[0];
@@ -92,7 +88,7 @@ static int target_xcopy_locate_se_dev_e4(struct se_cmd *se_cmd, struct xcopy_op 
 		if (rc != 0)
 			continue;
 
-		if (src == true) {
+		if (src) {
 			xop->dst_dev = se_dev;
 			pr_debug("XCOPY 0xe4: Setting xop->dst_dev: %p from located"
 				" se_dev\n", xop->dst_dev);
@@ -170,7 +166,7 @@ static int target_xcopy_parse_tiddesc_e4(struct se_cmd *se_cmd, struct xcopy_op 
 		return -EINVAL;
 	}
 
-	if (src == true) {
+	if (src) {
 		memcpy(&xop->src_tid_wwn[0], &desc[8], XCOPY_NAA_IEEE_REGEX_LEN);
 		/*
 		 * Determine if the source designator matches the local device
@@ -240,7 +236,7 @@ static int target_xcopy_parse_target_descriptors(struct se_cmd *se_cmd,
 			/*
 			 * Assume target descriptors are in source -> destination order..
 			 */
-			if (src == true)
+			if (src)
 				src = false;
 			else
 				src = true;
@@ -405,9 +401,6 @@ static void xcopy_pt_release_cmd(struct se_cmd *se_cmd)
 	struct xcopy_pt_cmd *xpt_cmd = container_of(se_cmd,
 				struct xcopy_pt_cmd, se_cmd);
 
-	if (xpt_cmd->remote_port)
-		kfree(se_cmd->se_lun);
-
 	kfree(xpt_cmd);
 }
 
@@ -567,27 +560,15 @@ static int target_xcopy_init_pt_lun(
 	 * reservations.  The pt_cmd->se_lun pointer will be setup from within
 	 * target_xcopy_setup_pt_port()
 	 */
-	if (remote_port == false) {
+	if (!remote_port) {
 		pt_cmd->se_cmd_flags |= SCF_SE_LUN_CMD | SCF_CMD_XCOPY_PASSTHROUGH;
 		return 0;
 	}
 
-	pt_cmd->se_lun = kzalloc(sizeof(struct se_lun), GFP_KERNEL);
-	if (!pt_cmd->se_lun) {
-		pr_err("Unable to allocate pt_cmd->se_lun\n");
-		return -ENOMEM;
-	}
-	init_completion(&pt_cmd->se_lun->lun_shutdown_comp);
-	INIT_LIST_HEAD(&pt_cmd->se_lun->lun_cmd_list);
-	INIT_LIST_HEAD(&pt_cmd->se_lun->lun_acl_list);
-	spin_lock_init(&pt_cmd->se_lun->lun_acl_lock);
-	spin_lock_init(&pt_cmd->se_lun->lun_cmd_lock);
-	spin_lock_init(&pt_cmd->se_lun->lun_sep_lock);
-
+	pt_cmd->se_lun = &se_dev->xcopy_lun;
 	pt_cmd->se_dev = se_dev;
 
 	pr_debug("Setup emulated se_dev: %p from se_dev\n", pt_cmd->se_dev);
-	pt_cmd->se_lun->lun_se_dev = se_dev;
 	pt_cmd->se_cmd_flags |= SCF_SE_LUN_CMD | SCF_CMD_XCOPY_PASSTHROUGH;
 
 	pr_debug("Setup emulated se_dev: %p to pt_cmd->se_lun->lun_se_dev\n",
@@ -658,8 +639,6 @@ static int target_xcopy_setup_pt_cmd(
 	return 0;
 
 out:
-	if (remote_port == true)
-		kfree(cmd->se_lun);
 	return ret;
 }
 

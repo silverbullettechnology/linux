@@ -9,7 +9,6 @@
  *  2 of the License, or (at your option) any later version.
  *
  */
-#include <linux/init.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
@@ -160,7 +159,7 @@ static int of_platform_serial_probe(struct platform_device *ofdev)
 	if (of_find_property(ofdev->dev.of_node, "used-by-rtas", NULL))
 		return -EBUSY;
 
-	info = kmalloc(sizeof(*info), GFP_KERNEL);
+	info = kzalloc(sizeof(*info), GFP_KERNEL);
 	if (info == NULL)
 		return -ENOMEM;
 
@@ -189,6 +188,7 @@ static int of_platform_serial_probe(struct platform_device *ofdev)
 	{
 		struct uart_8250_port port8250;
 		memset(&port8250, 0, sizeof(port8250));
+		port.type = port_type;
 		port8250.port = port;
 
 		if (port.fifosize)

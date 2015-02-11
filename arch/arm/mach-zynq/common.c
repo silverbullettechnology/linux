@@ -16,12 +16,11 @@
 
 #include <linux/init.h>
 #include <linux/kernel.h>
-#include <linux/cpu.h>
 #include <linux/cpumask.h>
 #include <linux/platform_device.h>
 #include <linux/clk.h>
+#include <linux/clk-provider.h>
 #include <linux/clk/zynq.h>
-#include <linux/opp.h>
 #include <linux/clocksource.h>
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
@@ -30,6 +29,8 @@
 #include <linux/memblock.h>
 #include <linux/irqchip.h>
 #include <linux/irqchip/arm-gic.h>
+#include <linux/slab.h>
+#include <linux/sys_soc.h>
 
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
@@ -38,127 +39,70 @@
 #include <asm/page.h>
 #include <asm/pgtable.h>
 #include <asm/smp_scu.h>
+#include <asm/system_info.h>
 #include <asm/hardware/cache-l2x0.h>
 
 #include "common.h"
 
+#define ZYNQ_DEVCFG_MCTRL		0x80
+#define ZYNQ_DEVCFG_PS_VERSION_SHIFT	28
+#define ZYNQ_DEVCFG_PS_VERSION_MASK	0xF
+
 void __iomem *zynq_scu_base;
 
 /**
- * zynq_memory_init() - Initialize special memory
+ * zynq_memory_init - Initialize special memory
  *
  * We need to stop things allocating the low memory as DMA can't work in
- * the 1st 512K of memory.  Using reserve vs remove is not totally clear yet.
+ * the 1st 512K of memory.
  */
 static void __init zynq_memory_init(void)
 {
-	/*
-	 * Reserve the 0-0x4000 addresses (before page tables and kernel)
-	 * which can't be used for DMA
-	 */
 	if (!__pa(PAGE_OFFSET))
-		memblock_reserve(0, 0x4000);
+		memblock_reserve(__pa(PAGE_OFFSET), __pa(swapper_pg_dir));
 }
 
-#ifdef CONFIG_CPU_FREQ
-#define CPUFREQ_MIN_FREQ_HZ	200000000
-static unsigned int freq_divs[] __initdata = {
-	2, 3
+static struct platform_device zynq_cpuidle_device = {
+	.name = "cpuidle-zynq",
 };
 
-static long __init xilinx_calc_opp_freq(struct clk *clk, long rate)
-{
-	long rate_nearest = clk_round_rate_nearest(clk, rate);
-	long rate_round = clk_round_rate(clk, rate_nearest / 1000 * 1000);
-
-	if (rate_round != rate_nearest)
-		rate_nearest += 1000;
-
-	return rate_nearest;
-}
-
 /**
- * zynq_opp_init() - Register OPPs
+ * zynq_get_revision - Get Zynq silicon revision
  *
- * Registering frequency/voltage operating points for voltage and frequency
- * scaling. Currently we only support frequency scaling.
+ * Return: Silicon version or -1 otherwise
  */
-static int __init zynq_opp_init(void)
+static int __init zynq_get_revision(void)
 {
-	long freq;
-	unsigned int i;
-	struct device *dev = get_cpu_device(0);
-	int ret = 0;
-	struct clk *cpuclk = clk_get(NULL, "cpufreq_clk");
+	struct device_node *np;
+	void __iomem *zynq_devcfg_base;
+	u32 revision;
 
-	if (!dev) {
-		pr_warn("%s: no cpu device. DVFS not available.", __func__);
-		return -ENODEV;
+	np = of_find_compatible_node(NULL, NULL, "xlnx,zynq-devcfg-1.0");
+	if (!np) {
+		pr_err("%s: no devcfg node found\n", __func__);
+		return -1;
 	}
 
-	if (IS_ERR(cpuclk)) {
-		pr_warn("%s: CPU clock not found. DVFS not available.",
-				__func__);
-		return PTR_ERR(cpuclk);
+	zynq_devcfg_base = of_iomap(np, 0);
+	if (!zynq_devcfg_base) {
+		pr_err("%s: Unable to map I/O memory\n", __func__);
+		return -1;
 	}
 
-	/* frequency/voltage operating points. For now use f only */
-	freq = clk_get_rate(cpuclk);
-	ret |= opp_add(dev, xilinx_calc_opp_freq(cpuclk, freq), 0);
-	for (i = 0; i < ARRAY_SIZE(freq_divs); i++) {
-		long tmp = xilinx_calc_opp_freq(cpuclk, freq / freq_divs[i]);
-		if (tmp >= CPUFREQ_MIN_FREQ_HZ)
-			ret |= opp_add(dev, tmp, 0);
-	}
-	freq = xilinx_calc_opp_freq(cpuclk, CPUFREQ_MIN_FREQ_HZ);
-	if (freq >= CPUFREQ_MIN_FREQ_HZ && IS_ERR(opp_find_freq_exact(dev, freq,
-				1)))
-		ret |= opp_add(dev, freq, 0);
+	revision = readl(zynq_devcfg_base + ZYNQ_DEVCFG_MCTRL);
+	revision >>= ZYNQ_DEVCFG_PS_VERSION_SHIFT;
+	revision &= ZYNQ_DEVCFG_PS_VERSION_MASK;
 
-	if (ret)
-		pr_warn("%s: Error adding OPPs.", __func__);
+	iounmap(zynq_devcfg_base);
 
-	return ret;
+	return revision;
 }
-device_initcall(zynq_opp_init);
-#endif
-
-#ifdef CONFIG_CACHE_L2X0
-static int __init zynq_l2c_init(void)
-{
-	/* 64KB way size, 8-way associativity, parity disabled,
-	 * prefetching option */
-#ifndef	CONFIG_XILINX_L2_PREFETCH
-	return l2x0_of_init(0x02060000, 0xF0F0FFFF);
-#else
-	return l2x0_of_init(0x72060000, 0xF0F0FFFF);
-#endif
-}
-early_initcall(zynq_l2c_init);
-#endif
-
-
-#ifdef CONFIG_XILINX_L1_PREFETCH
-static void __init zynq_data_prefetch_enable(void *info)
-{
-	/*
-	 * Enable prefetching in aux control register. L2 prefetch must
-	 * only be enabled if the slave supports it (PL310 does)
-	 */
-	asm volatile ("mrc   p15, 0, r1, c1, c0, 1\n"
-		      "orr   r1, r1, #6\n"
-		      "mcr   p15, 0, r1, c1, c0, 1\n"
-		      : : : "r1");
-}
-#endif
 
 static void __init zynq_init_late(void)
 {
+	zynq_core_pm_init();
 	zynq_pm_late_init();
-
-#ifdef CONFIG_XILINX_L1_PREFETCH
-	on_each_cpu(zynq_data_prefetch_enable, NULL, 0);
-#endif
+	zynq_prefetch_init();
 }
 
 /**
@@ -167,12 +111,52 @@ static void __init zynq_init_late(void)
  */
 static void __init zynq_init_machine(void)
 {
-	of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
+	struct platform_device_info devinfo = { .name = "cpufreq-dt", };
+	struct soc_device_attribute *soc_dev_attr;
+	struct soc_device *soc_dev;
+	struct device *parent = NULL;
+
+	soc_dev_attr = kzalloc(sizeof(*soc_dev_attr), GFP_KERNEL);
+	if (!soc_dev_attr)
+		goto out;
+
+	system_rev = zynq_get_revision();
+
+	soc_dev_attr->family = kasprintf(GFP_KERNEL, "Xilinx Zynq");
+	soc_dev_attr->revision = kasprintf(GFP_KERNEL, "0x%x", system_rev);
+	soc_dev_attr->soc_id = kasprintf(GFP_KERNEL, "0x%x",
+					 zynq_slcr_get_device_id());
+
+	soc_dev = soc_device_register(soc_dev_attr);
+	if (IS_ERR(soc_dev)) {
+		kfree(soc_dev_attr->family);
+		kfree(soc_dev_attr->revision);
+		kfree(soc_dev_attr->soc_id);
+		kfree(soc_dev_attr);
+		goto out;
+	}
+
+	parent = soc_device_to_device(soc_dev);
+
+out:
+	/*
+	 * Finished with the static registrations now; fill in the missing
+	 * devices
+	 */
+	of_platform_populate(NULL, of_default_bus_match_table, NULL, parent);
+
+	platform_device_register(&zynq_cpuidle_device);
+	platform_device_register_full(&devinfo);
+
+	zynq_slcr_init();
 }
 
 static void __init zynq_timer_init(void)
 {
-	zynq_slcr_init();
+	zynq_early_slcr_init();
+
+	zynq_clock_init();
+	of_clk_init(NULL);
 	clocksource_of_init();
 }
 
@@ -220,6 +204,9 @@ static const char * const zynq_dt_match[] = {
 };
 
 DT_MACHINE_START(XILINX_EP107, "Xilinx Zynq Platform")
+	/* 64KB way size, 8-way associativity, parity disabled */
+	.l2c_aux_val	= 0x00000000,
+	.l2c_aux_mask	= 0xffffffff,
 	.smp		= smp_ops(zynq_smp_ops),
 	.map_io		= zynq_map_io,
 	.init_irq	= zynq_irq_init,

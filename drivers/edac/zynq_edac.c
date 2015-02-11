@@ -2,7 +2,7 @@
  * Xilinx Zynq DDR ECC Driver
  * This driver is based on ppc4xx_edac.c drivers
  *
- * Copyright (C) 2012 - 2013 Xilinx, Inc.
+ * Copyright (C) 2012 - 2014 Xilinx, Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -13,9 +13,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/edac.h>
@@ -245,7 +242,7 @@ static void zynq_edac_generate_message(const struct mem_ctl_info *mci,
  * @mci:	Pointer to the edac memory controller instance
  * @perrstatus:	Pointer to the zynq ecc status structure
  *
- * This routine handles an xilinx,ps7-ddrc controller ECC correctable error.
+ * This routine handles the controller ECC correctable error.
  */
 static void zynq_edac_handle_error(struct mem_ctl_info *mci,
 			struct zynq_ecc_status *perrstatus)
@@ -332,8 +329,7 @@ static enum dev_type zynq_edac_get_dtype(void __iomem *base)
  * zynq_edac_get_eccstate - Return the controller ecc enable/disable status
  * @base:	Pointer to the ddr memory contoller base address
  *
- * This routine returns the ECC enable/diable status for the xlnx,ps7-ddrc
- * controller
+ * This routine returns the ECC enable/diable status for the controller
  *
  * Return: a ecc status boolean i.e true/false - enabled/disabled.
  */
@@ -445,7 +441,7 @@ static int zynq_edac_init_csrows(struct mem_ctl_info *mci)
  *
  * This routine performs initialization of the EDAC memory controller
  * instance and related driver-private data associated with the
- * xlnx,ps7-ddrc memory controller the instance is bound to.
+ * memory controller the instance is bound to.
  *
  * Return: 0 if OK; otherwise, < 0 on error.
  */
@@ -494,7 +490,7 @@ static int zynq_edac_mc_init(struct mem_ctl_info *mci,
  * zynq_edac_mc_probe - Check controller and bind driver
  * @pdev:	Pointer to the platform_device struct
  *
- * This routine probes a specific xilinx,ps7-ddrc controller
+ * This routine probes a specific controller
  * instance for binding with the driver.
  *
  * Return: 0 if the controller instance was successfully bound to the
@@ -517,7 +513,7 @@ static int zynq_edac_mc_probe(struct platform_device *pdev)
 
 	/* Check for the ecc enable status */
 	if (zynq_edac_get_eccstate(baseaddr) == false) {
-		dev_err(&pdev->dev, "ecc not enabled\n");
+		dev_info(&pdev->dev, "ecc not enabled\n");
 		return -ENXIO;
 	}
 
@@ -533,7 +529,7 @@ static int zynq_edac_mc_probe(struct platform_device *pdev)
 	layers[1].size = ZYNQ_EDAC_NR_CHANS;
 	layers[1].is_virt_csrow = false;
 
-	mci = edac_mc_alloc(pdev->id, ARRAY_SIZE(layers), layers,
+	mci = edac_mc_alloc(0, ARRAY_SIZE(layers), layers,
 			    sizeof(struct zynq_edac_priv));
 	if (mci == NULL) {
 		pr_err("Failed memory allocation for mci instance!\n");
@@ -573,7 +569,7 @@ free_edac_mc:
  * @pdev:	Pointer to the platform_device struct
  *
  * This routine unbinds the EDAC memory controller instance associated
- * with the specified xilinx,ps7-ddrc controller described by the
+ * with the specified controller described by the
  * OpenFirmware device tree node passed as a parameter.
  *
  * Return: Unconditionally 0
@@ -589,8 +585,8 @@ static int zynq_edac_mc_remove(struct platform_device *pdev)
 }
 
 /* Device tree node type and compatible tuples this driver can match on */
-static struct of_device_id zynq_edac_match[] = {
-	{ .compatible = "xlnx,ps7-ddrc-1.00.a", },
+static const struct of_device_id zynq_edac_match[] = {
+	{ .compatible = "xlnx,zynq-ddrc-a05", },
 	{ /* end of table */ }
 };
 

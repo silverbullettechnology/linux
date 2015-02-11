@@ -253,7 +253,7 @@ static int axi_hdmi_rx_start_streaming(struct vb2_queue *q, unsigned int count)
 	return 0;
 }
 
-static int axi_hdmi_rx_stop_streaming(struct vb2_queue *q)
+static void axi_hdmi_rx_stop_streaming(struct vb2_queue *q)
 {
 	struct axi_hdmi_rx *hdmi_rx = vb2_get_drv_priv(q);
 	struct axi_hdmi_rx_stream *s = &hdmi_rx->stream;
@@ -272,7 +272,6 @@ static int axi_hdmi_rx_stop_streaming(struct vb2_queue *q)
 	spin_unlock_irqrestore(&s->spinlock, flags);
 
 	vb2_wait_for_all_buffers(q);
-	return 0;
 }
 
 static const struct vb2_ops axi_hdmi_rx_qops = {
@@ -416,7 +415,7 @@ static int axi_hdmi_rx_enum_dv_timings(struct file *file, void *priv_fh,
 	struct axi_hdmi_rx *hdmi_rx = video_drvdata(file);
 	struct axi_hdmi_rx_stream *s = &hdmi_rx->stream;
 
-	return v4l2_subdev_call(s->subdev, video, enum_dv_timings, timings);
+	return v4l2_subdev_call(s->subdev, pad, enum_dv_timings, timings);
 }
 
 static int axi_hdmi_rx_query_dv_timings(struct file *file, void *priv_fh,
@@ -435,7 +434,7 @@ static int axi_hdmi_rx_dv_timings_cap(struct file *file, void *priv_fh,
 	struct axi_hdmi_rx *hdmi_rx = video_drvdata(file);
 	struct axi_hdmi_rx_stream *s = &hdmi_rx->stream;
 
-	return v4l2_subdev_call(s->subdev, video, dv_timings_cap, cap);
+	return v4l2_subdev_call(s->subdev, pad, dv_timings_cap, cap);
 }
 
 static int axi_hdmi_rx_enum_fmt_vid_cap(struct file *file, void *priv_fh,
@@ -506,14 +505,20 @@ static int axi_hdmi_rx_try_fmt_vid_cap(struct file *file, void *priv_fh,
 {
 	struct axi_hdmi_rx *hdmi_rx = video_drvdata(file);
 	struct axi_hdmi_rx_stream *s = &hdmi_rx->stream;
+	struct v4l2_subdev_format fmt;
 	struct v4l2_pix_format *pix = &f->fmt.pix;
-	struct v4l2_mbus_framefmt mbus_fmt;
+	int ret;
 
 	v4l_bound_align_image(&pix->width, 176, 1920, 0, &pix->height, 144,
 		1080, 0, 0);
 
-	v4l2_subdev_call(s->subdev, video, g_mbus_fmt, &mbus_fmt);
-	v4l2_fill_pix_format(pix, &mbus_fmt);
+	fmt.which = V4L2_SUBDEV_FORMAT_ACTIVE;
+	fmt.pad = ADV7611_PAD_SOURCE;
+	ret = v4l2_subdev_call(s->subdev, pad, get_fmt, NULL, &fmt);
+	if (ret)
+		return ret;
+
+	v4l2_fill_pix_format(pix, &fmt.format);
 
 	switch (pix->pixelformat) {
 	case V4L2_PIX_FMT_BGR32:
@@ -547,10 +552,19 @@ static int axi_hdmi_rx_s_fmt_vid_cap(struct file *file, void *priv_fh,
 	struct axi_hdmi_rx *hdmi_rx = video_drvdata(file);
 	struct axi_hdmi_rx_stream *s = &hdmi_rx->stream;
 	struct v4l2_pix_format *pix = &f->fmt.pix;
+	struct v4l2_subdev_format fmt;
 	unsigned int config;
+	int ret;
 
 	if (axi_hdmi_rx_try_fmt_vid_cap(file, priv_fh, f))
 		return -EINVAL;
+
+	fmt.which = V4L2_SUBDEV_FORMAT_ACTIVE;
+	fmt.pad = ADV7611_PAD_SOURCE;
+	fmt.format.code = V4L2_MBUS_FMT_YUYV8_1X16;
+	ret = v4l2_subdev_call(s->subdev, pad, set_fmt, NULL, &fmt);
+	if (ret)
+		return ret;
 
 	s->width = pix->width;
 	s->height = pix->height;
@@ -629,8 +643,8 @@ static int axi_hdmi_rx_s_input(struct file *file, void *priv_fh, unsigned int i)
 
 	axi_hdmi_rx_write(hdmi_rx, AXI_HDMI_RX_REG_SRC_SEL, i);
 
-	return v4l2_subdev_call(s->subdev, video, s_routing, ADV7604_MODE_HDMI,
-		0, 0);
+	return v4l2_subdev_call(s->subdev, video, s_routing,
+		ADV7604_PAD_HDMI_PORT_A, 0, 0);
 }
 
 static const struct v4l2_ioctl_ops axi_hdmi_rx_ioctl_ops = {
@@ -703,7 +717,6 @@ static int axi_hdmi_rx_nodes_register(struct axi_hdmi_rx *hdmi_rx)
 	vdev->fops = &axi_hdmi_rx_fops;
 	vdev->release = video_device_release_empty;
 	vdev->ctrl_handler = s->subdev->ctrl_handler;
-	set_bit(V4L2_FL_USE_FH_PRIO, &vdev->flags);
 	vdev->lock = &s->lock;
 	vdev->queue = q;
 	q->lock = &s->lock;
@@ -724,7 +737,7 @@ static int axi_hdmi_rx_nodes_register(struct axi_hdmi_rx *hdmi_rx)
 	q->buf_struct_size = sizeof(struct axi_hdmi_rx_buffer);
 	q->ops = &axi_hdmi_rx_qops;
 	q->mem_ops = &vb2_dma_contig_memops;
-	q->timestamp_type = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
+	q->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
 
 	ret = vb2_queue_init(q);
 	if (ret)
@@ -753,7 +766,7 @@ static int axi_hdmi_rx_async_bound(struct v4l2_async_notifier *notifier,
 
 	hdmi_rx->stream.subdev = subdev;
 
-	ret = v4l2_subdev_call(subdev, video, s_routing, ADV7604_MODE_HDMI,
+	ret = v4l2_subdev_call(subdev, video, s_routing, ADV7604_PAD_HDMI_PORT_A,
 		0, 0);
 	if (ret)
 		return ret;

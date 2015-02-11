@@ -60,7 +60,7 @@ int udl_dumb_create(struct drm_file *file,
 		    struct drm_device *dev,
 		    struct drm_mode_create_dumb *args)
 {
-	args->pitch = args->width * ((args->bpp + 1) / 8);
+	args->pitch = args->width * DIV_ROUND_UP(args->bpp, 8);
 	args->size = args->pitch * args->height;
 	return udl_gem_create(file, dev,
 			      args->size, &args->handle);
@@ -107,21 +107,14 @@ int udl_gem_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	}
 }
 
-int udl_gem_init_object(struct drm_gem_object *obj)
-{
-	BUG();
-
-	return 0;
-}
-
-static int udl_gem_get_pages(struct udl_gem_object *obj, gfp_t gfpmask)
+static int udl_gem_get_pages(struct udl_gem_object *obj)
 {
 	struct page **pages;
 
 	if (obj->pages)
 		return 0;
 
-	pages = drm_gem_get_pages(&obj->base, gfpmask);
+	pages = drm_gem_get_pages(&obj->base);
 	if (IS_ERR(pages))
 		return PTR_ERR(pages);
 
@@ -132,6 +125,12 @@ static int udl_gem_get_pages(struct udl_gem_object *obj, gfp_t gfpmask)
 
 static void udl_gem_put_pages(struct udl_gem_object *obj)
 {
+	if (obj->base.import_attach) {
+		drm_free_large(obj->pages);
+		obj->pages = NULL;
+		return;
+	}
+
 	drm_gem_put_pages(&obj->base, obj->pages, false, false);
 	obj->pages = NULL;
 }
@@ -148,7 +147,7 @@ int udl_gem_vmap(struct udl_gem_object *obj)
 		return 0;
 	}
 		
-	ret = udl_gem_get_pages(obj, GFP_KERNEL);
+	ret = udl_gem_get_pages(obj);
 	if (ret)
 		return ret;
 
@@ -178,8 +177,10 @@ void udl_gem_free_object(struct drm_gem_object *gem_obj)
 	if (obj->vmapping)
 		udl_gem_vunmap(obj);
 
-	if (gem_obj->import_attach)
+	if (gem_obj->import_attach) {
 		drm_prime_gem_destroy(gem_obj, obj->sg);
+		put_device(gem_obj->dev->dev);
+	}
 
 	if (obj->pages)
 		udl_gem_put_pages(obj);
@@ -204,7 +205,7 @@ int udl_gem_mmap(struct drm_file *file, struct drm_device *dev,
 	}
 	gobj = to_udl_bo(obj);
 
-	ret = udl_gem_get_pages(gobj, GFP_KERNEL);
+	ret = udl_gem_get_pages(gobj);
 	if (ret)
 		goto out;
 	ret = drm_gem_create_mmap_offset(obj);
@@ -257,9 +258,12 @@ struct drm_gem_object *udl_gem_prime_import(struct drm_device *dev,
 	int ret;
 
 	/* need to attach */
+	get_device(dev->dev);
 	attach = dma_buf_attach(dma_buf, dev->dev);
-	if (IS_ERR(attach))
+	if (IS_ERR(attach)) {
+		put_device(dev->dev);
 		return ERR_CAST(attach);
+	}
 
 	get_dma_buf(dma_buf);
 
@@ -283,6 +287,6 @@ fail_unmap:
 fail_detach:
 	dma_buf_detach(dma_buf, attach);
 	dma_buf_put(dma_buf);
-
+	put_device(dev->dev);
 	return ERR_PTR(ret);
 }

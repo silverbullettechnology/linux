@@ -52,7 +52,7 @@ bad_area:
 	return 1;
 }
 
-void do_page_fault(struct pt_regs *regs, unsigned long address)
+void do_page_fault(unsigned long address, struct pt_regs *regs)
 {
 	struct vm_area_struct *vma = NULL;
 	struct task_struct *tsk = current;
@@ -159,7 +159,6 @@ good_area:
 		return;
 	}
 
-	/* TBD: switch to pagefault_out_of_memory() */
 	if (fault & VM_FAULT_OOM)
 		goto out_of_memory;
 	else if (fault & VM_FAULT_SIGBUS)

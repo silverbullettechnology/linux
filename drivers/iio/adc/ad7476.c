@@ -14,14 +14,13 @@
 #include <linux/regulator/consumer.h>
 #include <linux/err.h>
 #include <linux/module.h>
+#include <linux/bitops.h>
 
 #include <linux/iio/iio.h>
 #include <linux/iio/sysfs.h>
 #include <linux/iio/buffer.h>
 #include <linux/iio/trigger_consumer.h>
 #include <linux/iio/triggered_buffer.h>
-
-#define RES_MASK(bits)	((1 << (bits)) - 1)
 
 struct ad7476_state;
 
@@ -64,19 +63,14 @@ static irqreturn_t ad7476_trigger_handler(int irq, void  *p)
 	struct iio_poll_func *pf = p;
 	struct iio_dev *indio_dev = pf->indio_dev;
 	struct ad7476_state *st = iio_priv(indio_dev);
-	s64 time_ns;
 	int b_sent;
 
 	b_sent = spi_sync(st->spi, &st->msg);
 	if (b_sent < 0)
 		goto done;
 
-	time_ns = iio_get_time_ns();
-
-	if (indio_dev->scan_timestamp)
-		((s64 *)st->data)[1] = time_ns;
-
-	iio_push_to_buffers(indio_dev, st->data);
+	iio_push_to_buffers_with_timestamp(indio_dev, st->data,
+		iio_get_time_ns());
 done:
 	iio_trigger_notify_done(indio_dev->trig);
 
@@ -122,7 +116,7 @@ static int ad7476_read_raw(struct iio_dev *indio_dev,
 		if (ret < 0)
 			return ret;
 		*val = (ret >> st->chip_info->channel[0].scan_type.shift) &
-			RES_MASK(st->chip_info->channel[0].scan_type.realbits);
+			GENMASK(st->chip_info->channel[0].scan_type.realbits - 1, 0);
 		return IIO_VAL_INT;
 	case IIO_CHAN_INFO_SCALE:
 		if (!st->chip_info->int_vref_uv) {
@@ -132,10 +126,9 @@ static int ad7476_read_raw(struct iio_dev *indio_dev,
 		} else {
 			scale_uv = st->chip_info->int_vref_uv;
 		}
-		scale_uv >>= chan->scan_type.realbits;
-		*val =  scale_uv / 1000;
-		*val2 = (scale_uv % 1000) * 1000;
-		return IIO_VAL_INT_PLUS_MICRO;
+		*val = scale_uv / 1000;
+		*val2 = chan->scan_type.realbits;
+		return IIO_VAL_FRACTIONAL_LOG2;
 	}
 	return -EINVAL;
 }

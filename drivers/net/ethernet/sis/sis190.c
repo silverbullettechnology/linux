@@ -330,7 +330,7 @@ static const struct {
 	{ "SiS 191 PCI Gigabit Ethernet adapter" },
 };
 
-static DEFINE_PCI_DEVICE_TABLE(sis190_pci_tbl) = {
+static const struct pci_device_id sis190_pci_tbl[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_SI, 0x0190), 0, 0, 0 },
 	{ PCI_DEVICE(PCI_VENDOR_ID_SI, 0x0191), 0, 0, 1 },
 	{ 0, },
@@ -1877,7 +1877,7 @@ static int sis190_init_one(struct pci_dev *pdev,
 
 	dev->netdev_ops = &sis190_netdev_ops;
 
-	SET_ETHTOOL_OPS(dev, &sis190_ethtool_ops);
+	dev->ethtool_ops = &sis190_ethtool_ops;
 	dev->watchdog_timeo = SIS190_TX_TIMEOUT;
 
 	spin_lock_init(&tp->lock);
@@ -1921,7 +1921,6 @@ static void sis190_remove_one(struct pci_dev *pdev)
 	cancel_work_sync(&tp->phy_task);
 	unregister_netdev(dev);
 	sis190_release_board(pdev);
-	pci_set_drvdata(pdev, NULL);
 }
 
 static struct pci_driver sis190_pci_driver = {

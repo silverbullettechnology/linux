@@ -15,8 +15,8 @@
  */
 /* Changes
  *
- * 	Mitsuru KANDA @USAGI and
- * 	YOSHIFUJI Hideaki @USAGI: Remove ipv6_parse_exthdrs().
+ *	Mitsuru KANDA @USAGI and
+ *	YOSHIFUJI Hideaki @USAGI: Remove ipv6_parse_exthdrs().
  */
 
 #include <linux/errno.h>
@@ -49,7 +49,7 @@
 
 int ip6_rcv_finish(struct sk_buff *skb)
 {
-	if (sysctl_ip_early_demux && !skb_dst(skb)) {
+	if (sysctl_ip_early_demux && !skb_dst(skb) && skb->sk == NULL) {
 		const struct inet6_protocol *ipprot;
 
 		ipprot = rcu_dereference(inet6_protos[ipv6_hdr(skb)->nexthdr]);
@@ -65,7 +65,7 @@ int ip6_rcv_finish(struct sk_buff *skb)
 int ipv6_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt, struct net_device *orig_dev)
 {
 	const struct ipv6hdr *hdr;
-	u32 		pkt_len;
+	u32 pkt_len;
 	struct inet6_dev *idev;
 	struct net *net = dev_net(skb->dev);
 

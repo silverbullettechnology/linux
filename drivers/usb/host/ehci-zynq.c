@@ -1,7 +1,7 @@
 /*
  * Xilinx Zynq USB Host Controller Driver.
  *
- * Copyright (C) 2011 Xilinx, Inc.
+ * Copyright (C) 2011 - 2014 Xilinx, Inc.
  *
  * This file is based on ehci-fsl.c file with few minor modifications
  * to support Xilinx Zynq USB controller.
@@ -18,11 +18,14 @@
 #include <linux/delay.h>
 #include <linux/pm.h>
 #include <linux/platform_device.h>
-#include <linux/xilinx_devices.h>
+#include <linux/usb/zynq_usb.h>
 #include <linux/usb/otg.h>
 #include <linux/usb/zynq_otg.h>
 
 #include "ehci-zynq.h"
+
+#define ZYNQ_USB2_PORT0_ENABLED	0x00000001
+#define ZYNQ_USB2_PORT1_ENABLED	0x00000002
 
 #ifdef CONFIG_USB_ZYNQ_PHY
 /********************************************************************
@@ -37,7 +40,7 @@ static int ehci_zynq_reinit(struct ehci_hcd *ehci);
 static int ehci_zynq_update_device(struct usb_hcd *hcd, struct usb_device
 		*udev)
 {
-	struct zynq_otg *xotg = xceiv_to_xotg(hcd->phy);
+	struct zynq_otg *xotg = xceiv_to_xotg(hcd->usb_phy);
 
 	if (udev->portnum == hcd->self.otg_port) {
 		/* HNP test device */
@@ -66,14 +69,14 @@ static void ehci_zynq_start_hnp(struct ehci_hcd *ehci)
 	ehci_writel(ehci, portsc, &ehci->regs->port_status[port]);
 	local_irq_restore(flags);
 
-	otg_start_hnp(hcd->phy->otg);
+	otg_start_hnp(hcd->usb_phy->otg);
 }
 
 static int ehci_zynq_otg_start_host(struct usb_phy *otg)
 {
 	struct usb_hcd		*hcd = bus_to_hcd(otg->otg->host);
 	struct zynq_otg *xotg =
-			xceiv_to_xotg(hcd->phy);
+			xceiv_to_xotg(hcd->usb_phy);
 
 	usb_add_hcd(hcd, xotg->irq, IRQF_SHARED);
 	return 0;
@@ -87,25 +90,6 @@ static int ehci_zynq_otg_stop_host(struct usb_phy *otg)
 	return 0;
 }
 #endif
-
-static int zynq_ehci_clk_notifier_cb(struct notifier_block *nb,
-		unsigned long event, void *data)
-{
-
-	switch (event) {
-	case PRE_RATE_CHANGE:
-		/* if a rate change is announced we need to check whether we can
-		 * maintain the current frequency by changing the clock
-		 * dividers.
-		 */
-		/* fall through */
-	case POST_RATE_CHANGE:
-		return NOTIFY_OK;
-	case ABORT_RATE_CHANGE:
-	default:
-		return NOTIFY_DONE;
-	}
-}
 
 /* configure so an HC device and id are always provided */
 /* always called with process context; sleeping is OK */
@@ -170,18 +154,12 @@ static int usb_hcd_zynq_probe(const struct hc_driver *driver,
 		goto err2;
 	}
 
-	pdata->clk_rate_change_nb.notifier_call = zynq_ehci_clk_notifier_cb;
-	pdata->clk_rate_change_nb.next = NULL;
-	if (clk_notifier_register(pdata->clk, &pdata->clk_rate_change_nb))
-		dev_warn(&pdev->dev, "Unable to register clock notifier.\n");
-
-
 	/*
 	 * do platform specific init: check the clock, grab/config pins, etc.
 	 */
 	if (pdata->init && pdata->init(pdev)) {
 		retval = -ENODEV;
-		goto err_out_clk_unreg_notif;
+		goto err_out_clk_disable;
 	}
 
 #ifdef CONFIG_USB_ZYNQ_PHY
@@ -190,12 +168,12 @@ static int usb_hcd_zynq_probe(const struct hc_driver *driver,
 		struct ehci_hcd *ehci = hcd_to_ehci(hcd);
 
 		hcd->self.otg_port = 1;
-		hcd->phy = pdata->otg;
-		retval = otg_set_host(hcd->phy->otg,
+		hcd->usb_phy = pdata->otg;
+		retval = otg_set_host(hcd->usb_phy->otg,
 				&ehci_to_hcd(ehci)->self);
 		if (retval)
-			goto err_out_clk_unreg_notif;
-		xotg = xceiv_to_xotg(hcd->phy);
+			goto err_out_clk_disable;
+		xotg = xceiv_to_xotg(hcd->usb_phy);
 		ehci->start_hnp = ehci_zynq_start_hnp;
 		xotg->start_host = ehci_zynq_otg_start_host;
 		xotg->stop_host = ehci_zynq_otg_stop_host;
@@ -204,7 +182,7 @@ static int usb_hcd_zynq_probe(const struct hc_driver *driver,
 	} else {
 		retval = usb_add_hcd(hcd, irq, IRQF_SHARED);
 		if (retval)
-			goto err_out_clk_unreg_notif;
+			goto err_out_clk_disable;
 
 		/*
 		 * Enable vbus on ULPI - zedboard requirement
@@ -217,12 +195,11 @@ static int usb_hcd_zynq_probe(const struct hc_driver *driver,
 	/* Don't need to set host mode here. It will be done by tdi_reset() */
 	retval = usb_add_hcd(hcd, irq, IRQF_SHARED);
 	if (retval)
-		goto err_out_clk_unreg_notif;
+		goto err_out_clk_disable;
 #endif
 	return retval;
 
-err_out_clk_unreg_notif:
-	clk_notifier_unregister(pdata->clk, &pdata->clk_rate_change_nb);
+err_out_clk_disable:
 	clk_disable_unprepare(pdata->clk);
 err2:
 	usb_put_hcd(hcd);
@@ -260,7 +237,6 @@ static void usb_hcd_zynq_remove(struct usb_hcd *hcd,
 	if (pdata->exit)
 		pdata->exit(pdev);
 	usb_put_hcd(hcd);
-	clk_notifier_unregister(pdata->clk, &pdata->clk_rate_change_nb);
 	clk_disable_unprepare(pdata->clk);
 }
 
@@ -343,7 +319,7 @@ static int ehci_zynq_reinit(struct ehci_hcd *ehci)
 	ehci_zynq_usb_setup(ehci);
 #ifdef CONFIG_USB_ZYNQ_PHY
 	/* Don't turn off port power in OTG mode */
-	if (!hcd->phy)
+	if (!hcd->usb_phy)
 #endif
 		ehci_port_power(ehci, 0);
 
@@ -448,7 +424,6 @@ static const struct dev_pm_ops ehci_zynq_pm_ops = {
 #define EHCI_ZYNQ_PM_OPS	NULL
 #endif /* ! CONFIG_PM_SLEEP */
 
-
 static const struct hc_driver ehci_zynq_hc_driver = {
 	.description = hcd_name,
 	.product_desc = "Xilinx Zynq USB EHCI Host Controller",
@@ -458,7 +433,7 @@ static const struct hc_driver ehci_zynq_hc_driver = {
 	 * generic hardware linkage
 	 */
 	.irq = ehci_irq,
-	.flags = HCD_USB2 | HCD_MEMORY,
+	.flags = HCD_USB2 | HCD_MEMORY | HCD_BH,
 
 	/*
 	 * basic lifecycle operations

@@ -16,6 +16,7 @@
 #include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/interrupt.h>
+#include <linux/bitops.h>
 
 #include <linux/iio/iio.h>
 #include <linux/iio/sysfs.h>
@@ -25,22 +26,18 @@
 
 #include <linux/platform_data/ad7298.h>
 
-#define AD7298_WRITE	(1 << 15) /* write to the control register */
-#define AD7298_REPEAT	(1 << 14) /* repeated conversion enable */
-#define AD7298_CH(x)	(1 << (13 - (x))) /* channel select */
-#define AD7298_TSENSE	(1 << 5) /* temperature conversion enable */
-#define AD7298_EXTREF	(1 << 2) /* external reference enable */
-#define AD7298_TAVG	(1 << 1) /* temperature sensor averaging enable */
-#define AD7298_PDD	(1 << 0) /* partial power down enable */
+#define AD7298_WRITE	BIT(15) /* write to the control register */
+#define AD7298_REPEAT	BIT(14) /* repeated conversion enable */
+#define AD7298_CH(x)	BIT(13 - (x)) /* channel select */
+#define AD7298_TSENSE	BIT(5) /* temperature conversion enable */
+#define AD7298_EXTREF	BIT(2) /* external reference enable */
+#define AD7298_TAVG	BIT(1) /* temperature sensor averaging enable */
+#define AD7298_PDD	BIT(0) /* partial power down enable */
 
 #define AD7298_MAX_CHAN		8
-#define AD7298_BITS		12
-#define AD7298_STORAGE_BITS	16
 #define AD7298_INTREF_mV	2500
 
 #define AD7298_CH_TEMP		9
-
-#define RES_MASK(bits)	((1 << (bits)) - 1)
 
 struct ad7298_state {
 	struct spi_device		*spi;
@@ -159,20 +156,14 @@ static irqreturn_t ad7298_trigger_handler(int irq, void *p)
 	struct iio_poll_func *pf = p;
 	struct iio_dev *indio_dev = pf->indio_dev;
 	struct ad7298_state *st = iio_priv(indio_dev);
-	s64 time_ns = 0;
 	int b_sent;
 
 	b_sent = spi_sync(st->spi, &st->ring_msg);
 	if (b_sent)
 		goto done;
 
-	if (indio_dev->scan_timestamp) {
-		time_ns = iio_get_time_ns();
-		memcpy((u8 *)st->rx_buf + indio_dev->scan_bytes - sizeof(s64),
-			&time_ns, sizeof(time_ns));
-	}
-
-	iio_push_to_buffers(indio_dev, st->rx_buf);
+	iio_push_to_buffers_with_timestamp(indio_dev, st->rx_buf,
+		iio_get_time_ns());
 
 done:
 	iio_trigger_notify_done(indio_dev->trig);
@@ -263,7 +254,7 @@ static int ad7298_read_raw(struct iio_dev *indio_dev,
 			return ret;
 
 		if (chan->address != AD7298_CH_TEMP)
-			*val = ret & RES_MASK(AD7298_BITS);
+			*val = ret & GENMASK(chan->scan_type.realbits - 1, 0);
 
 		return IIO_VAL_INT;
 	case IIO_CHAN_INFO_SCALE:

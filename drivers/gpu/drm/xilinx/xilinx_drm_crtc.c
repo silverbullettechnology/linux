@@ -28,6 +28,7 @@
 
 #include <video/videomode.h>
 
+#include "xilinx_drm_crtc.h"
 #include "xilinx_drm_drv.h"
 #include "xilinx_drm_plane.h"
 
@@ -44,6 +45,7 @@ struct xilinx_drm_crtc {
 	struct xilinx_vtc *vtc;
 	struct xilinx_drm_plane_manager *plane_manager;
 	int dpms;
+	unsigned int alpha;
 	struct drm_pending_vblank_event *event;
 };
 
@@ -63,6 +65,7 @@ static void xilinx_drm_crtc_dpms(struct drm_crtc *base_crtc, int dpms)
 
 	switch (dpms) {
 	case DRM_MODE_DPMS_ON:
+		xilinx_drm_plane_manager_dpms(crtc->plane_manager, dpms);
 		xilinx_drm_plane_dpms(crtc->priv_plane, dpms);
 		if (crtc->rgb2yuv)
 			xilinx_rgb2yuv_enable(crtc->rgb2yuv);
@@ -82,6 +85,7 @@ static void xilinx_drm_crtc_dpms(struct drm_crtc *base_crtc, int dpms)
 			xilinx_rgb2yuv_reset(crtc->rgb2yuv);
 		}
 		xilinx_drm_plane_dpms(crtc->priv_plane, dpms);
+		xilinx_drm_plane_manager_dpms(crtc->plane_manager, dpms);
 		break;
 	}
 }
@@ -158,8 +162,11 @@ static int xilinx_drm_crtc_mode_set(struct drm_crtc *base_crtc,
 					 adjusted_mode->vdisplay);
 
 	/* configure a plane: vdma and osd layer */
-	ret = xilinx_drm_plane_mode_set(crtc->priv_plane, base_crtc,
-					base_crtc->fb, 0, 0,
+	xilinx_drm_plane_manager_mode_set(crtc->plane_manager,
+					  adjusted_mode->hdisplay,
+					  adjusted_mode->vdisplay);
+	ret = xilinx_drm_plane_mode_set(crtc->priv_plane,
+					base_crtc->primary->fb, 0, 0,
 					adjusted_mode->hdisplay,
 					adjusted_mode->vdisplay,
 					x, y,
@@ -181,7 +188,10 @@ static int _xilinx_drm_crtc_mode_set_base(struct drm_crtc *base_crtc,
 	int ret;
 
 	/* configure a plane */
-	ret = xilinx_drm_plane_mode_set(crtc->priv_plane, base_crtc,
+	xilinx_drm_plane_manager_mode_set(crtc->plane_manager,
+					  base_crtc->hwmode.hdisplay,
+					  base_crtc->hwmode.vdisplay);
+	ret = xilinx_drm_plane_mode_set(crtc->priv_plane,
 					fb, 0, 0,
 					base_crtc->hwmode.hdisplay,
 					base_crtc->hwmode.vdisplay,
@@ -205,7 +215,8 @@ static int xilinx_drm_crtc_mode_set_base(struct drm_crtc *base_crtc,
 					 struct drm_framebuffer *old_fb)
 {
 	/* configure a plane */
-	return _xilinx_drm_crtc_mode_set_base(base_crtc, base_crtc->fb, x, y);
+	return _xilinx_drm_crtc_mode_set_base(base_crtc, base_crtc->primary->fb,
+	       x, y);
 }
 
 /* load rgb LUT for crtc */
@@ -236,8 +247,6 @@ void xilinx_drm_crtc_destroy(struct drm_crtc *base_crtc)
 
 	clk_disable_unprepare(crtc->pixel_clock);
 
-	xilinx_drm_plane_destroy_planes(crtc->plane_manager);
-	xilinx_drm_plane_destroy_private(crtc->plane_manager, crtc->priv_plane);
 	xilinx_drm_plane_remove_manager(crtc->plane_manager);
 }
 
@@ -304,7 +313,7 @@ static int xilinx_drm_crtc_page_flip(struct drm_crtc *base_crtc,
 		return ret;
 	}
 
-	base_crtc->fb = fb;
+	base_crtc->primary->fb = fb;
 
 	if (event) {
 		event->pipe = 0;
@@ -347,6 +356,20 @@ void xilinx_drm_crtc_disable_vblank(struct drm_crtc *base_crtc)
 	struct xilinx_drm_crtc *crtc = to_xilinx_crtc(base_crtc);
 
 	xilinx_vtc_disable_vblank_intr(crtc->vtc);
+}
+
+/**
+ * xilinx_drm_crtc_restore - Restore the crtc states
+ * @base_crtc: base crtc object
+ *
+ * Restore the crtc states to the default ones. The request is propagated
+ * to the plane driver.
+ */
+void xilinx_drm_crtc_restore(struct drm_crtc *base_crtc)
+{
+	struct xilinx_drm_crtc *crtc = to_xilinx_crtc(base_crtc);
+
+	xilinx_drm_plane_restore(crtc->plane_manager);
 }
 
 /* check max width */
@@ -392,7 +415,7 @@ struct drm_crtc *xilinx_drm_crtc_create(struct drm_device *drm)
 		return ERR_PTR(-ENOMEM);
 
 	/* probe chroma resampler and enable */
-	sub_node = of_parse_phandle(drm->dev->of_node, "cresample", 0);
+	sub_node = of_parse_phandle(drm->dev->of_node, "xlnx,cresample", 0);
 	if (sub_node) {
 		crtc->cresample = xilinx_cresample_probe(drm->dev, sub_node);
 		of_node_put(sub_node);
@@ -403,7 +426,7 @@ struct drm_crtc *xilinx_drm_crtc_create(struct drm_device *drm)
 	}
 
 	/* probe color space converter and enable */
-	sub_node = of_parse_phandle(drm->dev->of_node, "rgb2yuv", 0);
+	sub_node = of_parse_phandle(drm->dev->of_node, "xlnx,rgb2yuv", 0);
 	if (sub_node) {
 		crtc->rgb2yuv = xilinx_rgb2yuv_probe(drm->dev, sub_node);
 		of_node_put(sub_node);
@@ -432,24 +455,24 @@ struct drm_crtc *xilinx_drm_crtc_create(struct drm_device *drm)
 	/* create extra planes */
 	xilinx_drm_plane_create_planes(crtc->plane_manager, possible_crtcs);
 
-	crtc->pixel_clock = devm_clk_get(drm->dev, 0);
+	crtc->pixel_clock = devm_clk_get(drm->dev, NULL);
 	if (IS_ERR(crtc->pixel_clock)) {
 		DRM_DEBUG_KMS("failed to get pixel clock\n");
 		ret = -EPROBE_DEFER;
-		goto err_out;
+		goto err_plane;
 	}
 
 	ret = clk_prepare_enable(crtc->pixel_clock);
 	if (ret) {
 		DRM_DEBUG_KMS("failed to prepare/enable clock\n");
-		goto err_out;
+		goto err_plane;
 	}
 
-	sub_node = of_parse_phandle(drm->dev->of_node, "vtc", 0);
+	sub_node = of_parse_phandle(drm->dev->of_node, "xlnx,vtc", 0);
 	if (!sub_node) {
 		DRM_ERROR("failed to get a video timing controller node\n");
 		ret = -ENODEV;
-		goto err_out;
+		goto err_plane;
 	}
 
 	crtc->vtc = xilinx_vtc_probe(drm->dev, sub_node);
@@ -457,24 +480,22 @@ struct drm_crtc *xilinx_drm_crtc_create(struct drm_device *drm)
 	if (IS_ERR(crtc->vtc)) {
 		DRM_ERROR("failed to probe video timing controller\n");
 		ret = PTR_ERR(crtc->vtc);
-		goto err_out;
+		goto err_plane;
 	}
 
 	crtc->dpms = DRM_MODE_DPMS_OFF;
 
 	/* initialize drm crtc */
-	ret = drm_crtc_init(drm, &crtc->base, &xilinx_drm_crtc_funcs);
+	ret = drm_crtc_init_with_planes(drm, &crtc->base, crtc->priv_plane,
+					NULL, &xilinx_drm_crtc_funcs);
 	if (ret) {
 		DRM_ERROR("failed to initialize crtc\n");
-		goto err_out;
+		goto err_plane;
 	}
 	drm_crtc_helper_add(&crtc->base, &xilinx_drm_crtc_helper_funcs);
 
 	return &crtc->base;
 
-err_out:
-	xilinx_drm_plane_destroy_planes(crtc->plane_manager);
-	xilinx_drm_plane_destroy_private(crtc->plane_manager, crtc->priv_plane);
 err_plane:
 	xilinx_drm_plane_remove_manager(crtc->plane_manager);
 	return ERR_PTR(ret);

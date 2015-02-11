@@ -18,28 +18,6 @@
 #include <linux/dma-mapping.h>
 #include <linux/sizes.h>
 
-struct iio_dma_buffer_queue {
-	struct iio_buffer buffer;
-	struct device *dev;
-	const struct iio_dma_buffer_ops *ops;
-	struct mutex lock;
-	spinlock_t list_lock;
-	struct list_head incomming;
-	struct list_head outgoing;
-	bool active;
-
-	void *driver_data;
-
-	unsigned int num_blocks;
-	struct iio_dma_buffer_block **blocks;
-	unsigned int max_offset;
-
-	struct {
-		size_t pos;
-		struct iio_dma_buffer_block *block;
-	} fileio;
-};
-
 static void iio_buffer_block_release(struct kref *kref)
 {
 	struct iio_dma_buffer_block *block = container_of(kref,
@@ -135,7 +113,7 @@ static struct iio_dma_buffer_block *iio_dma_buffer_alloc_block(
 	return block;
 }
 
-static int iio_dma_buffer_alloc_blocks(struct iio_buffer *buffer,
+int iio_dma_buffer_alloc_blocks(struct iio_buffer *buffer,
 	struct iio_buffer_block_alloc_req *req)
 {
 	struct iio_dma_buffer_queue *queue = iio_buffer_to_queue(buffer);
@@ -154,8 +132,8 @@ static int iio_dma_buffer_alloc_blocks(struct iio_buffer *buffer,
 	/* 64 blocks ought to be enough for anybody ;) */
 	if (req->count > 64 - queue->num_blocks)
 		req->count = 64 - queue->num_blocks;
-	if (req->size > SZ_4M)
-		req->size = SZ_4M;
+	if (req->size > SZ_16M)
+		req->size = SZ_16M;
 
 	req->id = queue->num_blocks;
 
@@ -191,16 +169,20 @@ err_unlock:
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(iio_dma_buffer_alloc_blocks);
 
-static int iio_dma_buffer_free_blocks(struct iio_buffer *buffer)
+int iio_dma_buffer_free_blocks(struct iio_buffer *buffer)
 {
 	struct iio_dma_buffer_queue *queue = iio_buffer_to_queue(buffer);
 	unsigned int i;
 
 	mutex_lock(&queue->lock);
 
+	if (!queue->num_blocks)
+		goto out_unlock;
+
 	spin_lock_irq(&queue->list_lock);
-	INIT_LIST_HEAD(&queue->incomming);
+	INIT_LIST_HEAD(&queue->incoming);
 	INIT_LIST_HEAD(&queue->outgoing);
 
 	for (i = 0; i < queue->num_blocks; i++)
@@ -215,10 +197,13 @@ static int iio_dma_buffer_free_blocks(struct iio_buffer *buffer)
 	queue->num_blocks = 0;
 	queue->max_offset = 0;
 
+out_unlock:
+
 	mutex_unlock(&queue->lock);
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(iio_dma_buffer_free_blocks);
 
 void iio_dma_buffer_block_done(struct iio_dma_buffer_block *block)
 {
@@ -255,7 +240,7 @@ static int iio_dma_buffer_fileio_alloc(struct iio_dma_buffer_queue *queue,
 	queue->fileio.pos = 0;
 
 	if (indio_dev->direction == IIO_DEVICE_DIRECTION_IN)
-		list_add_tail(&block->head, &queue->incomming);
+		list_add_tail(&block->head, &queue->incoming);
 
 	return 0;
 }
@@ -264,7 +249,7 @@ static void iio_dma_buffer_fileio_free(struct iio_dma_buffer_queue *queue)
 {
 	spin_lock_irq(&queue->list_lock);
 	queue->fileio.block->state = IIO_BLOCK_STATE_DEAD;
-	INIT_LIST_HEAD(&queue->incomming);
+	INIT_LIST_HEAD(&queue->incoming);
 	INIT_LIST_HEAD(&queue->outgoing);
 	spin_unlock_irq(&queue->list_lock);
 	iio_buffer_block_put(queue->fileio.block);
@@ -274,12 +259,19 @@ static void iio_dma_buffer_fileio_free(struct iio_dma_buffer_queue *queue)
 static void iio_dma_buffer_submit_block(struct iio_dma_buffer_queue *queue,
 	struct iio_dma_buffer_block *block)
 {
-	block->state = IIO_BLOCK_STATE_ACTIVE;
-	iio_buffer_block_get(block);
-	queue->ops->submit_block(queue->driver_data, block);
+	/*
+	 * If the hardware has already been removed we put the block into
+	 * limbo. It will neither be on the incoming nor outgoing list, nor will
+	 * it ever complete. It will just wait to be freed eventually.
+	 */
+	if (queue->ops) {
+		block->state = IIO_BLOCK_STATE_ACTIVE;
+		iio_buffer_block_get(block);
+		queue->ops->submit_block(queue->driver_data, block);
+	}
 }
 
-static int iio_dma_buffer_enable(struct iio_buffer *buffer,
+int iio_dma_buffer_enable(struct iio_buffer *buffer,
 	struct iio_dev *indio_dev)
 {
 	struct iio_dma_buffer_queue *queue = iio_buffer_to_queue(buffer);
@@ -295,7 +287,7 @@ static int iio_dma_buffer_enable(struct iio_buffer *buffer,
 	if (!queue->num_blocks)
 		iio_dma_buffer_fileio_alloc(queue, indio_dev);
 
-	list_for_each_entry_safe(block, _block, &queue->incomming, head) {
+	list_for_each_entry_safe(block, _block, &queue->incoming, head) {
 		list_del(&block->head);
 		iio_dma_buffer_submit_block(queue, block);
 	}
@@ -304,8 +296,9 @@ static int iio_dma_buffer_enable(struct iio_buffer *buffer,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(iio_dma_buffer_enable);
 
-static int iio_dma_buffer_disable(struct iio_buffer *buffer,
+int iio_dma_buffer_disable(struct iio_buffer *buffer,
 	struct iio_dev *indio_dev)
 {
 	struct iio_dma_buffer_queue *queue = iio_buffer_to_queue(buffer);
@@ -320,6 +313,7 @@ static int iio_dma_buffer_disable(struct iio_buffer *buffer,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(iio_dma_buffer_disable);
 
 static void iio_dma_buffer_enqueue(struct iio_dma_buffer_queue *queue,
 	struct iio_dma_buffer_block *block)
@@ -328,7 +322,7 @@ static void iio_dma_buffer_enqueue(struct iio_dma_buffer_queue *queue,
 		iio_dma_buffer_submit_block(queue, block);
 	} else {
 		block->state = IIO_BLOCK_STATE_QUEUED;
-		list_move_tail(&block->head, &queue->incomming);
+		list_add_tail(&block->head, &queue->incoming);
 	}
 }
 
@@ -347,7 +341,7 @@ static void iio_dma_buffer_dequeue(struct iio_dma_buffer_queue *queue,
 	spin_unlock_irq(&queue->list_lock);
 }
 
-static int iio_dma_buffer_query_block(struct iio_buffer *buffer,
+int iio_dma_buffer_query_block(struct iio_buffer *buffer,
 	struct iio_buffer_block *block)
 {
 	struct iio_dma_buffer_queue *queue = iio_buffer_to_queue(buffer);
@@ -367,8 +361,9 @@ out_unlock:
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(iio_dma_buffer_query_block);
 
-static int iio_dma_buffer_enqueue_block(struct iio_buffer *buffer,
+int iio_dma_buffer_enqueue_block(struct iio_buffer *buffer,
 	struct iio_buffer_block *block)
 {
 	struct iio_dma_buffer_queue *queue = iio_buffer_to_queue(buffer);
@@ -383,6 +378,8 @@ static int iio_dma_buffer_enqueue_block(struct iio_buffer *buffer,
 	}
 
 	dma_block = queue->blocks[block->id];
+	dma_block->block.bytes_used = block->bytes_used;
+	dma_block->block.flags = block->flags;
 
 	switch (dma_block->state) {
 	case IIO_BLOCK_STATE_DONE:
@@ -405,8 +402,9 @@ out_unlock:
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(iio_dma_buffer_enqueue_block);
 
-static int iio_dma_buffer_dequeue_block(struct iio_buffer *buffer,
+int iio_dma_buffer_dequeue_block(struct iio_buffer *buffer,
 	struct iio_buffer_block *block)
 {
 	struct iio_dma_buffer_queue *queue = iio_buffer_to_queue(buffer);
@@ -429,15 +427,16 @@ out_unlock:
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(iio_dma_buffer_dequeue_block);
 
-static int iio_dma_buffer_read(struct iio_buffer *r, size_t n,
+int iio_dma_buffer_read(struct iio_buffer *buf, size_t n,
 	char __user *user_buffer)
 {
-	struct iio_dma_buffer_queue *queue = iio_buffer_to_queue(r);
+	struct iio_dma_buffer_queue *queue = iio_buffer_to_queue(buf);
 	struct iio_dma_buffer_block *block;
 	int ret;
 
-	if (n < r->bytes_per_datum)
+	if (n < buf->bytes_per_datum)
 		return -EINVAL;
 
 	mutex_lock(&queue->lock);
@@ -460,7 +459,7 @@ static int iio_dma_buffer_read(struct iio_buffer *r, size_t n,
 
 	block = queue->fileio.block;
 
-	n = round_down(n, r->bytes_per_datum);
+	n = rounddown(n, buf->bytes_per_datum);
 	if (n > block->block.bytes_used - queue->fileio.pos)
 		n = block->block.bytes_used - queue->fileio.pos;
 
@@ -481,15 +480,16 @@ out_unlock:
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(iio_dma_buffer_read);
 
-static int iio_dma_buffer_write(struct iio_buffer *r, size_t n,
+int iio_dma_buffer_write(struct iio_buffer *buf, size_t n,
 	const char __user *user_buffer)
 {
-	struct iio_dma_buffer_queue *queue = iio_buffer_to_queue(r);
+	struct iio_dma_buffer_queue *queue = iio_buffer_to_queue(buf);
 	struct iio_dma_buffer_block *block;
 	int ret;
 
-	if (n < r->bytes_per_datum)
+	if (n < buf->bytes_per_datum)
 		return -EINVAL;
 
 	mutex_lock(&queue->lock);
@@ -512,9 +512,9 @@ static int iio_dma_buffer_write(struct iio_buffer *r, size_t n,
 
 	block = queue->fileio.block;
 
-	n = ALIGN(n, r->bytes_per_datum);
-	if (n > block->block.bytes_used - queue->fileio.pos)
-		n = block->block.bytes_used - queue->fileio.pos;
+	n = ALIGN(n, buf->bytes_per_datum);
+	if (n > block->block.size - queue->fileio.pos)
+		n = block->block.size - queue->fileio.pos;
 
 	if (copy_from_user(block->vaddr + queue->fileio.pos, user_buffer, n)) {
 		ret = -EFAULT;
@@ -523,8 +523,10 @@ static int iio_dma_buffer_write(struct iio_buffer *r, size_t n,
 
 	queue->fileio.pos += n;
 
-	if (queue->fileio.pos == block->block.bytes_used)
+	if (queue->fileio.pos == block->block.size) {
+		block->block.bytes_used = block->block.size;
 		iio_dma_buffer_enqueue(queue, block);
+	}
 
 	ret = n;
 
@@ -534,10 +536,11 @@ out_unlock:
 	return ret;
 
 }
+EXPORT_SYMBOL_GPL(iio_dma_buffer_write);
 
-static bool iio_dma_buffer_data_available(struct iio_buffer *r)
+bool iio_dma_buffer_data_available(struct iio_buffer *buf)
 {
-	struct iio_dma_buffer_queue *queue = iio_buffer_to_queue(r);
+	struct iio_dma_buffer_queue *queue = iio_buffer_to_queue(buf);
 	bool data_available = false;
 
 	mutex_lock(&queue->lock);
@@ -551,6 +554,25 @@ static bool iio_dma_buffer_data_available(struct iio_buffer *r)
 
 	return data_available;
 }
+EXPORT_SYMBOL_GPL(iio_dma_buffer_data_available);
+
+bool iio_dma_buffer_space_available(struct iio_buffer *buf)
+{
+	struct iio_dma_buffer_queue *queue = iio_buffer_to_queue(buf);
+	bool space_available = false;
+
+	mutex_lock(&queue->lock);
+	if (queue->fileio.block &&
+		queue->fileio.block->state == IIO_BLOCK_STATE_DEQUEUED)
+		space_available = true;
+	spin_lock_irq(&queue->list_lock);
+	space_available |= !list_empty(&queue->outgoing);
+	spin_unlock_irq(&queue->list_lock);
+	mutex_unlock(&queue->lock);
+
+	return space_available;
+}
+EXPORT_SYMBOL_GPL(iio_dma_buffer_space_available);
 
 static void iio_dma_buffer_mmap_open(struct vm_area_struct *area)
 {
@@ -569,7 +591,7 @@ static const struct vm_operations_struct iio_dma_buffer_vm_ops = {
 	.close = iio_dma_buffer_mmap_close,
 };
 
-static int iio_dma_buffer_mmap(struct iio_buffer *buffer,
+int iio_dma_buffer_mmap(struct iio_buffer *buffer,
 	struct vm_area_struct *vma)
 {
 	struct iio_dma_buffer_queue *queue = iio_buffer_to_queue(buffer);
@@ -603,33 +625,26 @@ static int iio_dma_buffer_mmap(struct iio_buffer *buffer,
 	return dma_mmap_coherent(queue->dev, vma, block->vaddr,
 		block->phys_addr, vma->vm_end - vma->vm_start);
 }
+EXPORT_SYMBOL_GPL(iio_dma_buffer_mmap);
 
-static int iio_get_length_dmabuf(struct iio_buffer *r)
+int iio_dma_buffer_set_bytes_per_datum(struct iio_buffer *buf, size_t bpd)
 {
-	return r->length;
-}
-
-static int iio_get_bytes_per_datum_dmabuf(struct iio_buffer *r)
-{
-	return r->bytes_per_datum;
-}
-
-static int iio_set_bytes_per_datum_dmabuf(struct iio_buffer *r, size_t bpd)
-{
-	r->bytes_per_datum = bpd;
+	buf->bytes_per_datum = bpd;
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(iio_dma_buffer_set_bytes_per_datum);
 
-static int iio_set_length_dmabuf(struct iio_buffer *r, int length)
+int iio_dma_buffer_set_length(struct iio_buffer *buf, int length)
 {
 	/* Avoid an invalid state */
 	if (length < 2)
 		length = 2;
-	r->length = length;
+	buf->length = length;
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(iio_dma_buffer_set_length);
 
 static void iio_dma_buffer_release(struct iio_buffer *buffer)
 {
@@ -644,13 +659,12 @@ static void iio_dma_buffer_release(struct iio_buffer *buffer)
 static const struct iio_buffer_access_funcs dmabuf_ops = {
 	.read = iio_dma_buffer_read,
 	.write = iio_dma_buffer_write,
-	.get_bytes_per_datum = iio_get_bytes_per_datum_dmabuf,
-	.set_bytes_per_datum = iio_set_bytes_per_datum_dmabuf,
-	.get_length = iio_get_length_dmabuf,
-	.set_length = iio_set_length_dmabuf,
+	.set_bytes_per_datum = iio_dma_buffer_set_bytes_per_datum,
+	.set_length = iio_dma_buffer_set_length,
 	.enable = iio_dma_buffer_enable,
 	.disable = iio_dma_buffer_disable,
 	.data_available = iio_dma_buffer_data_available,
+	.space_available = iio_dma_buffer_space_available,
 	.release = iio_dma_buffer_release,
 
 	.alloc_blocks = iio_dma_buffer_alloc_blocks,
@@ -661,40 +675,20 @@ static const struct iio_buffer_access_funcs dmabuf_ops = {
 	.mmap = iio_dma_buffer_mmap,
 };
 
-static IIO_BUFFER_ENABLE_ATTR;
-static IIO_BUFFER_LENGTH_ATTR;
-
-static struct attribute *iio_dmabuf_attributes[] = {
-	&dev_attr_length.attr,
-	&dev_attr_enable.attr,
-	NULL,
-};
-
-static struct attribute_group iio_dmabuf_attribute_group = {
-	.attrs = iio_dmabuf_attributes,
-	.name = "buffer",
-};
-
 static u64 dmamask = DMA_BIT_MASK(64);
 
-struct iio_buffer *iio_dmabuf_allocate(struct device *dma_dev,
-	const struct iio_dma_buffer_ops *ops, void *driver_data)
+int iio_dmabuf_init(struct iio_dma_buffer_queue *queue,
+	struct device *dma_dev, const struct iio_dma_buffer_ops *ops,
+	void *driver_data)
 {
-	struct iio_dma_buffer_queue *queue;
-
-	queue = kzalloc(sizeof(*queue), GFP_KERNEL);
-	if (!queue)
-		return NULL;
-
 	iio_buffer_init(&queue->buffer);
-	queue->buffer.attrs = &iio_dmabuf_attribute_group;
 	queue->buffer.access = &dmabuf_ops;
 	queue->buffer.length = PAGE_SIZE;
 	queue->dev = dma_dev;
 	queue->ops = ops;
 	queue->driver_data = driver_data;
 
-	INIT_LIST_HEAD(&queue->incomming);
+	INIT_LIST_HEAD(&queue->incoming);
 	INIT_LIST_HEAD(&queue->outgoing);
 
 	mutex_init(&queue->lock);
@@ -705,15 +699,40 @@ struct iio_buffer *iio_dmabuf_allocate(struct device *dma_dev,
 	if (!queue->dev->coherent_dma_mask)
 		queue->dev->coherent_dma_mask = DMA_BIT_MASK(64);
 
+	return 0;
+}
+EXPORT_SYMBOL_GPL(iio_dmabuf_init);
+
+void iio_dmabuf_exit(struct iio_dma_buffer_queue *queue)
+{
+	mutex_lock(&queue->lock);
+	queue->ops = NULL;
+	mutex_unlock(&queue->lock);
+}
+
+struct iio_buffer *iio_dmabuf_allocate(struct device *dma_dev,
+	const struct iio_dma_buffer_ops *ops, void *driver_data)
+{
+	struct iio_dma_buffer_queue *queue;
+
+	queue = kzalloc(sizeof(*queue), GFP_KERNEL);
+	if (!queue)
+		return NULL;
+
+	iio_dmabuf_init(queue, dma_dev, ops, driver_data);
+
 	return &queue->buffer;
 }
-EXPORT_SYMBOL(iio_dmabuf_allocate);
+EXPORT_SYMBOL_GPL(iio_dmabuf_allocate);
 
 void iio_dmabuf_free(struct iio_buffer *buffer)
 {
+	struct iio_dma_buffer_queue *queue = iio_buffer_to_queue(buffer);
+
+	iio_dmabuf_exit(queue);
 	iio_buffer_put(buffer);
 }
-EXPORT_SYMBOL(iio_dmabuf_free);
+EXPORT_SYMBOL_GPL(iio_dmabuf_free);
 
 MODULE_AUTHOR("Lars-Peter Clausen <lars@metafoo.de>");
 MODULE_DESCRIPTION("DMA buffer for the IIO framework");

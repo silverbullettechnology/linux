@@ -459,8 +459,7 @@ static int ks8842_tx_frame_dma(struct sk_buff *skb, struct net_device *netdev)
 		sg_dma_len(&ctl->sg) += 4 - sg_dma_len(&ctl->sg) % 4;
 
 	ctl->adesc = dmaengine_prep_slave_sg(ctl->chan,
-		&ctl->sg, 1, DMA_MEM_TO_DEV,
-		DMA_PREP_INTERRUPT | DMA_COMPL_SKIP_SRC_UNMAP);
+		&ctl->sg, 1, DMA_MEM_TO_DEV, DMA_PREP_INTERRUPT);
 	if (!ctl->adesc)
 		return NETDEV_TX_BUSY;
 
@@ -571,8 +570,7 @@ static int __ks8842_start_new_rx_dma(struct net_device *netdev)
 		sg_dma_len(sg) = DMA_BUFFER_SIZE;
 
 		ctl->adesc = dmaengine_prep_slave_sg(ctl->chan,
-			sg, 1, DMA_DEV_TO_MEM,
-			DMA_PREP_INTERRUPT | DMA_COMPL_SKIP_SRC_UNMAP);
+			sg, 1, DMA_DEV_TO_MEM, DMA_PREP_INTERRUPT);
 
 		if (!ctl->adesc)
 			goto out;
@@ -877,13 +875,11 @@ static void ks8842_stop_dma(struct ks8842_adapter *adapter)
 
 	tx_ctl->adesc = NULL;
 	if (tx_ctl->chan)
-		tx_ctl->chan->device->device_control(tx_ctl->chan,
-			DMA_TERMINATE_ALL, 0);
+		dmaengine_terminate_all(tx_ctl->chan);
 
 	rx_ctl->adesc = NULL;
 	if (rx_ctl->chan)
-		rx_ctl->chan->device->device_control(rx_ctl->chan,
-			DMA_TERMINATE_ALL, 0);
+		dmaengine_terminate_all(rx_ctl->chan);
 
 	if (sg_dma_address(&rx_ctl->sg))
 		dma_unmap_single(adapter->dev, sg_dma_address(&rx_ctl->sg),

@@ -58,7 +58,7 @@ static irqreturn_t rt_timer_irq(int irq, void *_rt)
 
 static int rt_timer_request(struct rt_timer *rt)
 {
-	int err = request_irq(rt->irq, rt_timer_irq, IRQF_DISABLED,
+	int err = request_irq(rt->irq, rt_timer_irq, 0,
 						dev_name(rt->dev), rt);
 	if (err) {
 		dev_err(rt->dev, "failed to request irq\n");
@@ -147,7 +147,7 @@ static int rt_timer_probe(struct platform_device *pdev)
 	rt_timer_config(rt, 2);
 	rt_timer_enable(rt);
 
-	dev_info(&pdev->dev, "maximum frequncy is %luHz\n", rt->timer_freq);
+	dev_info(&pdev->dev, "maximum frequency is %luHz\n", rt->timer_freq);
 
 	return 0;
 }

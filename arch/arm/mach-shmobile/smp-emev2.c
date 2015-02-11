@@ -23,10 +23,9 @@
 #include <linux/spinlock.h>
 #include <linux/io.h>
 #include <linux/delay.h>
-#include <mach/common.h>
-#include <mach/emev2.h>
 #include <asm/smp_plat.h>
 #include <asm/smp_scu.h>
+#include "common.h"
 
 #define EMEV2_SCU_BASE 0x1e000000
 #define EMEV2_SMU_BASE 0xe0110000
@@ -34,12 +33,6 @@
 
 static int emev2_boot_secondary(unsigned int cpu, struct task_struct *idle)
 {
-	int ret;
-
-	ret = shmobile_smp_scu_boot_secondary(cpu, idle);
-	if (ret)
-		return ret;
-
 	arch_send_wakeup_ipi_mask(cpumask_of(cpu_logical_map(cpu)));
 	return 0;
 }

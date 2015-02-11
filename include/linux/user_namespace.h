@@ -27,6 +27,12 @@ struct user_namespace {
 	kuid_t			owner;
 	kgid_t			group;
 	unsigned int		proc_inum;
+
+	/* Register of per-UID persistent keyrings for this namespace */
+#ifdef CONFIG_PERSISTENT_KEYRINGS
+	struct key		*persistent_keyring_register;
+	struct rw_semaphore	persistent_keyring_register_sem;
+#endif
 };
 
 extern struct user_namespace init_user_ns;
@@ -51,9 +57,9 @@ static inline void put_user_ns(struct user_namespace *ns)
 }
 
 struct seq_operations;
-extern struct seq_operations proc_uid_seq_operations;
-extern struct seq_operations proc_gid_seq_operations;
-extern struct seq_operations proc_projid_seq_operations;
+extern const struct seq_operations proc_uid_seq_operations;
+extern const struct seq_operations proc_gid_seq_operations;
+extern const struct seq_operations proc_projid_seq_operations;
 extern ssize_t proc_uid_map_write(struct file *, const char __user *, size_t, loff_t *);
 extern ssize_t proc_gid_map_write(struct file *, const char __user *, size_t, loff_t *);
 extern ssize_t proc_projid_map_write(struct file *, const char __user *, size_t, loff_t *);

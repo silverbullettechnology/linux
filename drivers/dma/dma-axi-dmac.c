@@ -55,6 +55,8 @@
 #define AXI_DMAC_IRQ_SOT		BIT(0)
 #define AXI_DMAC_IRQ_EOT		BIT(1)
 
+#define AXI_DMAC_FLAG_CYCLIC		BIT(0)
+
 #undef SPEED_TEST
 
 struct axi_dmac_sg {
@@ -83,6 +85,10 @@ struct axi_dmac_chan {
 	struct axi_dmac_desc *next_desc;
 	struct list_head active_descs;
 	enum dma_transfer_direction direction;
+	unsigned int src_width;
+	unsigned int dest_width;
+
+	bool hw_cyclic;
 };
 
 struct axi_dmac {
@@ -93,6 +99,8 @@ struct axi_dmac {
 
 	struct dma_device dma_dev;
 	struct axi_dmac_chan chan;
+
+	struct device_dma_parameters dma_parms;
 
 #ifdef SPEED_TEST
 	void *test_virt;
@@ -153,26 +161,45 @@ static int axi_dmac_start_transfer(struct axi_dmac_chan *chan)
 {
 	struct axi_dmac *dmac = chan_to_axi_dmac(chan);
 	struct virt_dma_desc *vdesc;
+	struct axi_dmac_desc *desc;
 	struct axi_dmac_sg *sg;
+	unsigned int flags = 0;
 	unsigned int val;
 
 	val = axi_dmac_read(dmac, AXI_DMAC_REG_START_TRANSFER);
 	if (val)
 		return 0;
 
-	if (!chan->next_desc) {
-		vdesc = vchan_next_desc(&chan->vchan);
-		if (!vdesc)
-			return 0;
-		list_move_tail(&vdesc->node, &chan->active_descs);
-		chan->next_desc = to_axi_dmac_desc(vdesc);
-	}
+	desc = chan->next_desc;
 
-	sg = &chan->next_desc->sg[chan->next_desc->num_submitted];
+	do {
 
-	chan->next_desc->num_submitted++;
-	if (chan->next_desc->num_submitted == chan->next_desc->num_sgs)
+		if (!desc) {
+			vdesc = vchan_next_desc(&chan->vchan);
+			if (!vdesc)
+				return 0;
+			list_move_tail(&vdesc->node, &chan->active_descs);
+			desc = to_axi_dmac_desc(vdesc);
+		}
+
+		sg = &desc->sg[desc->num_submitted];
+
+		if (sg->x_len == 0 || sg->y_len == 0) {
+			desc->num_completed++;
+			if (desc->num_completed == desc->num_sgs) {
+				list_del(&desc->vdesc.node);
+				vchan_cookie_complete(&desc->vdesc);
+				desc = NULL;
+			}
+			sg = NULL;
+		}
+	} while (sg == NULL);
+
+	desc->num_submitted++;
+	if (desc->num_submitted == desc->num_sgs)
 		chan->next_desc = NULL;
+	else
+		chan->next_desc = desc;
 
 	sg->id = axi_dmac_read(dmac, AXI_DMAC_REG_TRANSFER_ID);
 
@@ -186,8 +213,16 @@ static int axi_dmac_start_transfer(struct axi_dmac_chan *chan)
 		axi_dmac_write(dmac, AXI_DMAC_REG_SRC_STRIDE, sg->src_stride);
 	}
 
+	/*
+	 * If the hardware supports cyclic transfers and there is no callback to
+	 * call, enable hw cyclic mode to avoid unnecessary interrupts.
+	 */
+	if (chan->hw_cyclic && desc->cyclic && !desc->vdesc.tx.callback)
+		flags |= AXI_DMAC_FLAG_CYCLIC;
+
 	axi_dmac_write(dmac, AXI_DMAC_REG_X_LENGTH, sg->x_len - 1);
 	axi_dmac_write(dmac, AXI_DMAC_REG_Y_LENGTH, sg->y_len - 1);
+	axi_dmac_write(dmac, AXI_DMAC_REG_FLAGS, flags);
 	axi_dmac_write(dmac, AXI_DMAC_REG_START_TRANSFER, 1);
 
 	return 0;
@@ -384,6 +419,9 @@ static struct dma_async_tx_descriptor *axi_dmac_prep_dma_cyclic(
 	if (direction != chan->direction)
 		return NULL;
 
+	if (period_len == 0 || buf_len == 0)
+		return NULL;
+
 	if (buf_len % period_len)
 		return NULL;
 
@@ -458,6 +496,20 @@ static struct dma_async_tx_descriptor *axi_dmac_prep_interleaved(
 	return vchan_tx_prep(&chan->vchan, &desc->vdesc, flags);
 }
 
+static int axi_dmac_device_slave_caps(struct dma_chan *c,
+	struct dma_slave_caps *caps)
+{
+	struct axi_dmac_chan *chan = to_axi_dmac_chan(c);
+
+	caps->src_addr_widths = BIT(chan->src_width);
+	caps->dstn_addr_widths = BIT(chan->dest_width);
+	caps->directions = BIT(chan->direction);
+	caps->cmd_pause = false;
+	caps->cmd_terminate = true;
+
+	return 0;
+}
+
 static int axi_dmac_alloc_chan_resources(struct dma_chan *c)
 {
 	return 0;
@@ -517,9 +569,9 @@ static int axi_dmac_probe(struct platform_device *pdev)
 	struct dma_device *dma_dev;
 	struct axi_dmac *dmac;
 	struct resource *res;
-	u32 chan_type;
 	u32 device_id;
 	u32 buswidth;
+	u32 tmp;
 	int ret;
 #ifdef SPEED_TEST
 	int i;
@@ -550,10 +602,10 @@ static int axi_dmac_probe(struct platform_device *pdev)
 	if (of_chan == NULL)
 		return -ENODEV;
 
-	chan_type = 0;
-	of_property_read_u32(of_chan, "adi,type", &chan_type);
+	tmp = 0;
+	of_property_read_u32(of_chan, "adi,type", &tmp);
 
-	switch (chan_type) {
+	switch (tmp) {
 	case 0:
 		dmac->chan.direction = DMA_DEV_TO_MEM;
 		break;
@@ -578,6 +630,22 @@ static int axi_dmac_probe(struct platform_device *pdev)
 	}
 	pr_debug("buswidth %u -> copy_align %u\n", buswidth, ilog2(buswidth >> 3));
 
+	tmp = 64;
+	of_property_read_u32(of_chan, "adi,source-bus-width", &tmp);
+	dmac->chan.src_width = tmp / 8;
+
+	tmp = 64;
+	of_property_read_u32(of_chan, "adi,destination-bus-width", &tmp);
+	dmac->chan.dest_width = tmp / 8;
+
+	tmp = 24;
+	of_property_read_u32(of_chan, "adi,length-width", &tmp);
+
+	pdev->dev.dma_parms = &dmac->dma_parms;
+	dma_set_max_seg_size(&pdev->dev, (1ULL << tmp) - 1);
+
+	dmac->chan.hw_cyclic = of_property_read_bool(of_chan, "adi,cyclic");
+
 	dma_dev = &dmac->dma_dev;
 	dma_cap_set(DMA_SLAVE, dma_dev->cap_mask);
 	dma_cap_set(DMA_CYCLIC, dma_dev->cap_mask);
@@ -589,6 +657,7 @@ static int axi_dmac_probe(struct platform_device *pdev)
 	dma_dev->device_prep_dma_cyclic = axi_dmac_prep_dma_cyclic;
 	dma_dev->device_prep_interleaved_dma = axi_dmac_prep_interleaved;
 	dma_dev->device_control = axi_dmac_control;
+	dma_dev->device_slave_caps = axi_dmac_device_slave_caps;
 	dma_dev->dev = &pdev->dev;
 	dma_dev->chancnt = 1;
 	INIT_LIST_HEAD(&dma_dev->channels);

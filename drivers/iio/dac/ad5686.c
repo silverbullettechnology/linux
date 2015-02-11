@@ -78,7 +78,7 @@ struct ad5686_state {
 	 */
 
 	union {
-		u32 d32;
+		__be32 d32;
 		u8 d8[4];
 	} data[3] ____cacheline_aligned;
 };
@@ -201,7 +201,6 @@ static int ad5686_read_raw(struct iio_dev *indio_dev,
 			   long m)
 {
 	struct ad5686_state *st = iio_priv(indio_dev);
-	unsigned long scale_uv;
 	int ret;
 
 	switch (m) {
@@ -213,14 +212,10 @@ static int ad5686_read_raw(struct iio_dev *indio_dev,
 			return ret;
 		*val = ret;
 		return IIO_VAL_INT;
-		break;
 	case IIO_CHAN_INFO_SCALE:
-		scale_uv = (st->vref_mv * 100000)
-			>> (chan->scan_type.realbits);
-		*val =  scale_uv / 100000;
-		*val2 = (scale_uv % 100000) * 10;
-		return IIO_VAL_INT_PLUS_MICRO;
-
+		*val = st->vref_mv;
+		*val2 = chan->scan_type.realbits;
+		return IIO_VAL_FRACTIONAL_LOG2;
 	}
 	return -EINVAL;
 }
@@ -272,7 +267,7 @@ static const struct iio_chan_spec_ext_info ad5686_ext_info[] = {
 	{ },
 };
 
-#define AD5868_CHANNEL(chan, bits, shift) {			\
+#define AD5868_CHANNEL(chan, bits, _shift) {			\
 		.type = IIO_VOLTAGE,				\
 		.indexed = 1,					\
 		.output = 1,					\
@@ -280,7 +275,12 @@ static const struct iio_chan_spec_ext_info ad5686_ext_info[] = {
 		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),	\
 		.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE),\
 		.address = AD5686_ADDR_DAC(chan),		\
-		.scan_type = IIO_ST('u', bits, 16, shift),	\
+		.scan_type = {					\
+			.sign = 'u',				\
+			.realbits = (bits),			\
+			.storagebits = 16,			\
+			.shift = (_shift),			\
+		},						\
 		.ext_info = ad5686_ext_info,			\
 }
 
@@ -313,7 +313,7 @@ static int ad5686_probe(struct spi_device *spi)
 {
 	struct ad5686_state *st;
 	struct iio_dev *indio_dev;
-	int ret, regdone = 0, voltage_uv = 0;
+	int ret, voltage_uv = 0;
 
 	indio_dev = devm_iio_device_alloc(&spi->dev, sizeof(*st));
 	if (indio_dev == NULL)
@@ -355,7 +355,6 @@ static int ad5686_probe(struct spi_device *spi)
 	indio_dev->channels = st->chip_info->channel;
 	indio_dev->num_channels = AD5686_DAC_CHANNELS;
 
-	regdone = 1;
 	ret = ad5686_spi_write(st, AD5686_CMD_INTERNAL_REFER_SETUP, 0,
 				!!voltage_uv, 0);
 	if (ret)

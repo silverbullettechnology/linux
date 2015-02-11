@@ -22,6 +22,7 @@
 #include "vdso.h"
 #include "strbuf.h"
 #include "build-id.h"
+#include "data.h"
 
 static bool no_buildid_cache = false;
 
@@ -176,7 +177,7 @@ perf_header__set_cmdline(int argc, const char **argv)
 			continue;		\
 		else
 
-static int write_buildid(char *name, size_t name_len, u8 *build_id,
+static int write_buildid(const char *name, size_t name_len, u8 *build_id,
 			 pid_t pid, u16 misc, int fd)
 {
 	int err;
@@ -199,6 +200,47 @@ static int write_buildid(char *name, size_t name_len, u8 *build_id,
 	return write_padded(fd, name, name_len + 1, len);
 }
 
+static int __dsos__hit_all(struct list_head *head)
+{
+	struct dso *pos;
+
+	list_for_each_entry(pos, head, node)
+		pos->hit = true;
+
+	return 0;
+}
+
+static int machine__hit_all_dsos(struct machine *machine)
+{
+	int err;
+
+	err = __dsos__hit_all(&machine->kernel_dsos.head);
+	if (err)
+		return err;
+
+	return __dsos__hit_all(&machine->user_dsos.head);
+}
+
+int dsos__hit_all(struct perf_session *session)
+{
+	struct rb_node *nd;
+	int err;
+
+	err = machine__hit_all_dsos(&session->machines.host);
+	if (err)
+		return err;
+
+	for (nd = rb_first(&session->machines.guests); nd; nd = rb_next(nd)) {
+		struct machine *pos = rb_entry(nd, struct machine, rb_node);
+
+		err = machine__hit_all_dsos(pos);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
 static int __dsos__write_buildid_table(struct list_head *head,
 				       struct machine *machine,
 				       pid_t pid, u16 misc, int fd)
@@ -208,15 +250,15 @@ static int __dsos__write_buildid_table(struct list_head *head,
 
 	dsos__for_each_with_build_id(pos, head) {
 		int err;
-		char  *name;
+		const char *name;
 		size_t name_len;
 
 		if (!pos->hit)
 			continue;
 
-		if (is_vdso_map(pos->short_name)) {
-			name = (char *) VDSO__MAP_NAME;
-			name_len = sizeof(VDSO__MAP_NAME) + 1;
+		if (dso__is_vdso(pos)) {
+			name = pos->short_name;
+			name_len = pos->short_name_len + 1;
 		} else if (dso__is_kcore(pos)) {
 			machine__mmap_name(machine, nm, sizeof(nm));
 			name = nm;
@@ -246,11 +288,12 @@ static int machine__write_buildid_table(struct machine *machine, int fd)
 		umisc = PERF_RECORD_MISC_GUEST_USER;
 	}
 
-	err = __dsos__write_buildid_table(&machine->kernel_dsos, machine,
+	err = __dsos__write_buildid_table(&machine->kernel_dsos.head, machine,
 					  machine->pid, kmisc, fd);
 	if (err == 0)
-		err = __dsos__write_buildid_table(&machine->user_dsos, machine,
-						  machine->pid, umisc, fd);
+		err = __dsos__write_buildid_table(&machine->user_dsos.head,
+						  machine, machine->pid, umisc,
+						  fd);
 	return err;
 }
 
@@ -297,7 +340,7 @@ int build_id_cache__add_s(const char *sbuild_id, const char *debugdir,
 
 	len = scnprintf(filename, size, "%s%s%s",
 		       debugdir, slash ? "/" : "",
-		       is_vdso ? VDSO__MAP_NAME : realname);
+		       is_vdso ? DSO__NAME_VDSO : realname);
 	if (mkdir_p(filename, 0755))
 		goto out_free;
 
@@ -385,8 +428,8 @@ static int dso__cache_build_id(struct dso *dso, struct machine *machine,
 			       const char *debugdir)
 {
 	bool is_kallsyms = dso->kernel && dso->long_name[0] != '/';
-	bool is_vdso = is_vdso_map(dso->short_name);
-	char *name = dso->long_name;
+	bool is_vdso = dso__is_vdso(dso);
+	const char *name = dso->long_name;
 	char nm[PATH_MAX];
 
 	if (dso__is_kcore(dso)) {
@@ -413,9 +456,10 @@ static int __dsos__cache_build_ids(struct list_head *head,
 
 static int machine__cache_build_ids(struct machine *machine, const char *debugdir)
 {
-	int ret = __dsos__cache_build_ids(&machine->kernel_dsos, machine,
+	int ret = __dsos__cache_build_ids(&machine->kernel_dsos.head, machine,
 					  debugdir);
-	ret |= __dsos__cache_build_ids(&machine->user_dsos, machine, debugdir);
+	ret |= __dsos__cache_build_ids(&machine->user_dsos.head, machine,
+				       debugdir);
 	return ret;
 }
 
@@ -441,8 +485,10 @@ static int perf_session__cache_build_ids(struct perf_session *session)
 
 static bool machine__read_build_ids(struct machine *machine, bool with_hits)
 {
-	bool ret = __dsos__read_build_ids(&machine->kernel_dsos, with_hits);
-	ret |= __dsos__read_build_ids(&machine->user_dsos, with_hits);
+	bool ret;
+
+	ret  = __dsos__read_build_ids(&machine->kernel_dsos.head, with_hits);
+	ret |= __dsos__read_build_ids(&machine->user_dsos.head, with_hits);
 	return ret;
 }
 
@@ -533,16 +579,12 @@ static int write_version(int fd, struct perf_header *h __maybe_unused,
 	return do_write_string(fd, perf_version_string);
 }
 
-static int write_cpudesc(int fd, struct perf_header *h __maybe_unused,
-		       struct perf_evlist *evlist __maybe_unused)
+static int __write_cpudesc(int fd, const char *cpuinfo_proc)
 {
-#ifndef CPUINFO_PROC
-#define CPUINFO_PROC NULL
-#endif
 	FILE *file;
 	char *buf = NULL;
 	char *s, *p;
-	const char *search = CPUINFO_PROC;
+	const char *search = cpuinfo_proc;
 	size_t len = 0;
 	int ret = -1;
 
@@ -591,6 +633,25 @@ done:
 	fclose(file);
 	return ret;
 }
+
+static int write_cpudesc(int fd, struct perf_header *h __maybe_unused,
+		       struct perf_evlist *evlist __maybe_unused)
+{
+#ifndef CPUINFO_PROC
+#define CPUINFO_PROC {"model name", }
+#endif
+	const char *cpuinfo_procs[] = CPUINFO_PROC;
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(cpuinfo_procs); i++) {
+		int ret;
+		ret = __write_cpudesc(fd, cpuinfo_procs[i]);
+		if (ret >= 0)
+			return ret;
+	}
+	return -1;
+}
+
 
 static int write_nrcpus(int fd, struct perf_header *h __maybe_unused,
 			struct perf_evlist *evlist __maybe_unused)
@@ -642,8 +703,7 @@ static int write_event_desc(int fd, struct perf_header *h __maybe_unused,
 	if (ret < 0)
 		return ret;
 
-	list_for_each_entry(evsel, &evlist->entries, node) {
-
+	evlist__for_each(evlist, evsel) {
 		ret = do_write(fd, &evsel->attr, sz);
 		if (ret < 0)
 			return ret;
@@ -799,10 +859,10 @@ static void free_cpu_topo(struct cpu_topo *tp)
 		return;
 
 	for (i = 0 ; i < tp->core_sib; i++)
-		free(tp->core_siblings[i]);
+		zfree(&tp->core_siblings[i]);
 
 	for (i = 0 ; i < tp->thread_sib; i++)
-		free(tp->thread_siblings[i]);
+		zfree(&tp->thread_siblings[i]);
 
 	free(tp);
 }
@@ -930,7 +990,7 @@ static int write_topo_node(int fd, int node)
 		/* skip over invalid lines */
 		if (!strchr(buf, ':'))
 			continue;
-		if (sscanf(buf, "%*s %*d %s %"PRIu64, field, &mem) != 2)
+		if (sscanf(buf, "%*s %*d %31s %"PRIu64, field, &mem) != 2)
 			goto done;
 		if (!strcmp(field, "MemTotal:"))
 			mem_total = mem;
@@ -1091,7 +1151,7 @@ static int write_group_desc(int fd, struct perf_header *h __maybe_unused,
 	if (ret < 0)
 		return ret;
 
-	list_for_each_entry(evsel, &evlist->entries, node) {
+	evlist__for_each(evlist, evsel) {
 		if (perf_evsel__is_group_leader(evsel) &&
 		    evsel->nr_members > 1) {
 			const char *name = evsel->group_name ?: "{anon_group}";
@@ -1231,10 +1291,8 @@ static void free_event_desc(struct perf_evsel *events)
 		return;
 
 	for (evsel = events; evsel->attr.size; evsel++) {
-		if (evsel->name)
-			free(evsel->name);
-		if (evsel->id)
-			free(evsel->id);
+		zfree(&evsel->name);
+		zfree(&evsel->id);
 	}
 
 	free(events);
@@ -1325,8 +1383,7 @@ read_event_desc(struct perf_header *ph, int fd)
 		}
 	}
 out:
-	if (buf)
-		free(buf);
+	free(buf);
 	return events;
 error:
 	if (events)
@@ -1489,7 +1546,7 @@ static void print_group_desc(struct perf_header *ph, int fd __maybe_unused,
 
 	session = container_of(ph, struct perf_session, header);
 
-	list_for_each_entry(evsel, &session->evlist->entries, node) {
+	evlist__for_each(session->evlist, evsel) {
 		if (perf_evsel__is_group_leader(evsel) &&
 		    evsel->nr_members > 1) {
 			fprintf(fp, "# group: %s{%s", evsel->group_name ?: "",
@@ -1510,7 +1567,7 @@ static int __event_process_build_id(struct build_id_event *bev,
 				    struct perf_session *session)
 {
 	int err = -1;
-	struct list_head *head;
+	struct dsos *dsos;
 	struct machine *machine;
 	u16 misc;
 	struct dso *dso;
@@ -1525,22 +1582,22 @@ static int __event_process_build_id(struct build_id_event *bev,
 	switch (misc) {
 	case PERF_RECORD_MISC_KERNEL:
 		dso_type = DSO_TYPE_KERNEL;
-		head = &machine->kernel_dsos;
+		dsos = &machine->kernel_dsos;
 		break;
 	case PERF_RECORD_MISC_GUEST_KERNEL:
 		dso_type = DSO_TYPE_GUEST_KERNEL;
-		head = &machine->kernel_dsos;
+		dsos = &machine->kernel_dsos;
 		break;
 	case PERF_RECORD_MISC_USER:
 	case PERF_RECORD_MISC_GUEST_USER:
 		dso_type = DSO_TYPE_USER;
-		head = &machine->user_dsos;
+		dsos = &machine->user_dsos;
 		break;
 	default:
 		goto out;
 	}
 
-	dso = __dsos__findnew(head, filename);
+	dso = __dsos__findnew(dsos, filename);
 	if (dso != NULL) {
 		char sbuild_id[BUILD_ID_SIZE * 2 + 1];
 
@@ -1708,7 +1765,7 @@ static int process_nrcpus(struct perf_file_section *section __maybe_unused,
 			  struct perf_header *ph, int fd,
 			  void *data __maybe_unused)
 {
-	size_t ret;
+	ssize_t ret;
 	u32 nr;
 
 	ret = readn(fd, &nr, sizeof(nr));
@@ -1752,7 +1809,7 @@ static int process_total_mem(struct perf_file_section *section __maybe_unused,
 			     void *data __maybe_unused)
 {
 	uint64_t mem;
-	size_t ret;
+	ssize_t ret;
 
 	ret = readn(fd, &mem, sizeof(mem));
 	if (ret != sizeof(mem))
@@ -1770,7 +1827,7 @@ perf_evlist__find_by_index(struct perf_evlist *evlist, int idx)
 {
 	struct perf_evsel *evsel;
 
-	list_for_each_entry(evsel, &evlist->entries, node) {
+	evlist__for_each(evlist, evsel) {
 		if (evsel->idx == idx)
 			return evsel;
 	}
@@ -1821,7 +1878,7 @@ static int process_cmdline(struct perf_file_section *section __maybe_unused,
 			   struct perf_header *ph, int fd,
 			   void *data __maybe_unused)
 {
-	size_t ret;
+	ssize_t ret;
 	char *str;
 	u32 nr, i;
 	struct strbuf sb;
@@ -1857,7 +1914,7 @@ static int process_cpu_topology(struct perf_file_section *section __maybe_unused
 				struct perf_header *ph, int fd,
 				void *data __maybe_unused)
 {
-	size_t ret;
+	ssize_t ret;
 	u32 nr, i;
 	char *str;
 	struct strbuf sb;
@@ -1913,7 +1970,7 @@ static int process_numa_topology(struct perf_file_section *section __maybe_unuse
 				 struct perf_header *ph, int fd,
 				 void *data __maybe_unused)
 {
-	size_t ret;
+	ssize_t ret;
 	u32 nr, node, i;
 	char *str;
 	uint64_t mem_total, mem_free;
@@ -1973,7 +2030,7 @@ static int process_pmu_mappings(struct perf_file_section *section __maybe_unused
 				struct perf_header *ph, int fd,
 				void *data __maybe_unused)
 {
-	size_t ret;
+	ssize_t ret;
 	char *name;
 	u32 pmu_num;
 	u32 type;
@@ -2073,12 +2130,14 @@ static int process_group_desc(struct perf_file_section *section __maybe_unused,
 	session->evlist->nr_groups = nr_groups;
 
 	i = nr = 0;
-	list_for_each_entry(evsel, &session->evlist->entries, node) {
+	evlist__for_each(session->evlist, evsel) {
 		if (evsel->idx == (int) desc[i].leader_idx) {
 			evsel->leader = evsel;
 			/* {anon_group} is a dummy name */
-			if (strcmp(desc[i].name, "{anon_group}"))
+			if (strcmp(desc[i].name, "{anon_group}")) {
 				evsel->group_name = desc[i].name;
+				desc[i].name = NULL;
+			}
 			evsel->nr_members = desc[i].nr_members;
 
 			if (i >= nr_groups || nr > 0) {
@@ -2104,8 +2163,8 @@ static int process_group_desc(struct perf_file_section *section __maybe_unused,
 
 	ret = 0;
 out_free:
-	while ((int) --i >= 0)
-		free(desc[i].name);
+	for (i = 0; i < nr_groups; i++)
+		zfree(&desc[i].name);
 	free(desc);
 
 	return ret;
@@ -2189,7 +2248,7 @@ int perf_header__fprintf_info(struct perf_session *session, FILE *fp, bool full)
 {
 	struct header_print_data hd;
 	struct perf_header *header = &session->header;
-	int fd = session->fd;
+	int fd = perf_data_file__fd(session->file);
 	hd.fp = fp;
 	hd.full = full;
 
@@ -2298,7 +2357,7 @@ int perf_session__write_header(struct perf_session *session,
 
 	lseek(fd, sizeof(f_header), SEEK_SET);
 
-	list_for_each_entry(evsel, &evlist->entries, node) {
+	evlist__for_each(session->evlist, evsel) {
 		evsel->id_offset = lseek(fd, 0, SEEK_CUR);
 		err = do_write(fd, evsel->id, evsel->ids * sizeof(u64));
 		if (err < 0) {
@@ -2309,7 +2368,7 @@ int perf_session__write_header(struct perf_session *session,
 
 	attr_offset = lseek(fd, 0, SEEK_CUR);
 
-	list_for_each_entry(evsel, &evlist->entries, node) {
+	evlist__for_each(evlist, evsel) {
 		f_attr = (struct perf_file_attr){
 			.attr = evsel->attr,
 			.ids  = {
@@ -2324,7 +2383,8 @@ int perf_session__write_header(struct perf_session *session,
 		}
 	}
 
-	header->data_offset = lseek(fd, 0, SEEK_CUR);
+	if (!header->data_offset)
+		header->data_offset = lseek(fd, 0, SEEK_CUR);
 	header->feat_offset = header->data_offset + header->data_size;
 
 	if (at_exit) {
@@ -2531,7 +2591,7 @@ static int check_magic_endian(u64 magic, uint64_t hdr_sz,
 int perf_file_header__read(struct perf_file_header *header,
 			   struct perf_header *ph, int fd)
 {
-	int ret;
+	ssize_t ret;
 
 	lseek(fd, 0, SEEK_SET);
 
@@ -2625,7 +2685,7 @@ static int perf_file_header__read_pipe(struct perf_pipe_file_header *header,
 				       struct perf_header *ph, int fd,
 				       bool repipe)
 {
-	int ret;
+	ssize_t ret;
 
 	ret = readn(fd, header, sizeof(*header));
 	if (ret <= 0)
@@ -2650,7 +2710,8 @@ static int perf_header__read_pipe(struct perf_session *session)
 	struct perf_header *header = &session->header;
 	struct perf_pipe_file_header f_header;
 
-	if (perf_file_header__read_pipe(&f_header, header, session->fd,
+	if (perf_file_header__read_pipe(&f_header, header,
+					perf_data_file__fd(session->file),
 					session->repipe) < 0) {
 		pr_debug("incompatible file format\n");
 		return -EINVAL;
@@ -2665,7 +2726,7 @@ static int read_attr(int fd, struct perf_header *ph,
 	struct perf_event_attr *attr = &f_attr->attr;
 	size_t sz, left;
 	size_t our_sz = sizeof(f_attr->attr);
-	int ret;
+	ssize_t ret;
 
 	memset(f_attr, 0, sizeof(*f_attr));
 
@@ -2740,7 +2801,7 @@ static int perf_evlist__prepare_tracepoint_events(struct perf_evlist *evlist,
 {
 	struct perf_evsel *pos;
 
-	list_for_each_entry(pos, &evlist->entries, node) {
+	evlist__for_each(evlist, pos) {
 		if (pos->attr.type == PERF_TYPE_TRACEPOINT &&
 		    perf_evsel__prepare_tracepoint_event(pos, pevent))
 			return -1;
@@ -2751,18 +2812,19 @@ static int perf_evlist__prepare_tracepoint_events(struct perf_evlist *evlist,
 
 int perf_session__read_header(struct perf_session *session)
 {
+	struct perf_data_file *file = session->file;
 	struct perf_header *header = &session->header;
 	struct perf_file_header	f_header;
 	struct perf_file_attr	f_attr;
 	u64			f_id;
 	int nr_attrs, nr_ids, i, j;
-	int fd = session->fd;
+	int fd = perf_data_file__fd(file);
 
 	session->evlist = perf_evlist__new();
 	if (session->evlist == NULL)
 		return -ENOMEM;
 
-	if (session->fd_pipe)
+	if (perf_data_file__is_pipe(file))
 		return perf_header__read_pipe(session);
 
 	if (perf_file_header__read(&f_header, header, fd) < 0)
@@ -2777,7 +2839,7 @@ int perf_session__read_header(struct perf_session *session)
 	if (f_header.data.size == 0) {
 		pr_warning("WARNING: The %s file's data size field is 0 which is unexpected.\n"
 			   "Was the 'perf record' command properly terminated?\n",
-			   session->filename);
+			   file->path);
 	}
 
 	nr_attrs = f_header.attrs.size / f_header.attr_size;
@@ -2794,7 +2856,7 @@ int perf_session__read_header(struct perf_session *session)
 			perf_event__attr_swap(&f_attr.attr);
 
 		tmp = lseek(fd, 0, SEEK_CUR);
-		evsel = perf_evsel__new(&f_attr.attr, i);
+		evsel = perf_evsel__new(&f_attr.attr);
 
 		if (evsel == NULL)
 			goto out_delete_evlist;
@@ -2829,11 +2891,11 @@ int perf_session__read_header(struct perf_session *session)
 
 	symbol_conf.nr_events = nr_attrs;
 
-	perf_header__process_sections(header, fd, &session->pevent,
+	perf_header__process_sections(header, fd, &session->tevent,
 				      perf_file_section__process);
 
 	if (perf_evlist__prepare_tracepoint_events(session->evlist,
-						   session->pevent))
+						   session->tevent.pevent))
 		goto out_delete_evlist;
 
 	return 0;
@@ -2887,7 +2949,7 @@ int perf_event__synthesize_attrs(struct perf_tool *tool,
 	struct perf_evsel *evsel;
 	int err = 0;
 
-	list_for_each_entry(evsel, &session->evlist->entries, node) {
+	evlist__for_each(session->evlist, evsel) {
 		err = perf_event__synthesize_attr(tool, &evsel->attr, evsel->ids,
 						  evsel->id, process);
 		if (err) {
@@ -2913,7 +2975,7 @@ int perf_event__process_attr(struct perf_tool *tool __maybe_unused,
 			return -ENOMEM;
 	}
 
-	evsel = perf_evsel__new(&event->attr.attr, evlist->nr_entries);
+	evsel = perf_evsel__new(&event->attr.attr);
 	if (evsel == NULL)
 		return -ENOMEM;
 
@@ -2990,18 +3052,19 @@ int perf_event__process_tracing_data(struct perf_tool *tool __maybe_unused,
 				     struct perf_session *session)
 {
 	ssize_t size_read, padding, size = event->tracing_data.size;
-	off_t offset = lseek(session->fd, 0, SEEK_CUR);
+	int fd = perf_data_file__fd(session->file);
+	off_t offset = lseek(fd, 0, SEEK_CUR);
 	char buf[BUFSIZ];
 
 	/* setup for reading amidst mmap */
-	lseek(session->fd, offset + sizeof(struct tracing_data_event),
+	lseek(fd, offset + sizeof(struct tracing_data_event),
 	      SEEK_SET);
 
-	size_read = trace_report(session->fd, &session->pevent,
+	size_read = trace_report(fd, &session->tevent,
 				 session->repipe);
 	padding = PERF_ALIGN(size_read, sizeof(u64)) - size_read;
 
-	if (readn(session->fd, buf, padding) < 0) {
+	if (readn(fd, buf, padding) < 0) {
 		pr_err("%s: reading input file", __func__);
 		return -1;
 	}
@@ -3019,7 +3082,7 @@ int perf_event__process_tracing_data(struct perf_tool *tool __maybe_unused,
 	}
 
 	perf_evlist__prepare_tracepoint_events(session->evlist,
-					       session->pevent);
+					       session->tevent.pevent);
 
 	return size_read + padding;
 }

@@ -509,6 +509,9 @@ static irqreturn_t xilinx_vtc_intr_handler(int irq, void *data)
 
 	u32 intr = xilinx_vtc_intr_get(vtc);
 
+	if (!intr)
+		return IRQ_NONE;
+
 	if ((intr & VTC_IXR_G_VBLANK) && (vtc->vblank_fn))
 		vtc->vblank_fn(vtc->vblank_data);
 
@@ -535,13 +538,25 @@ void xilinx_vtc_disable_vblank_intr(struct xilinx_vtc *vtc)
 	vtc->vblank_fn = NULL;
 }
 
+static const struct of_device_id xilinx_vtc_of_match[] = {
+	{ .compatible = "xlnx,v-tc-5.01.a" },
+	{ /* end of table */ },
+};
+
 /* probe vtc */
 struct xilinx_vtc *xilinx_vtc_probe(struct device *dev,
 				    struct device_node *node)
 {
 	struct xilinx_vtc *vtc;
+	const struct of_device_id *match;
 	struct resource res;
 	int ret;
+
+	match = of_match_node(xilinx_vtc_of_match, node);
+	if (!match) {
+		dev_err(dev, "failed to match the device node\n");
+		return ERR_PTR(-ENODEV);
+	}
 
 	vtc = devm_kzalloc(dev, sizeof(*vtc), GFP_KERNEL);
 	if (!vtc)

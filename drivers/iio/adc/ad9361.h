@@ -1,7 +1,7 @@
 /*
  * AD9361
  *
- * Copyright 2013 Analog Devices Inc.
+ * Copyright 2013-2014 Analog Devices Inc.
  *
  * Licensed under the GPL-2.
  */
@@ -430,6 +430,8 @@
 #define REG_RX_FRACT_BYTE_0			 0x233 /* RX Fractional Byte 0 */
 #define REG_RX_FRACT_BYTE_1			 0x234 /* RX Fractional Byte 1 */
 #define REG_RX_FRACT_BYTE_2			 0x235 /* RX Fractional Byte 2 */
+#define REG_RX_FORCE_ALC				 0x236 /* RX Force ALC */
+#define REG_RX_FORCE_VCO_TUNE_0			 0x237 /* RX Force VCO Tune 0 */
 #define REG_RX_FORCE_VCO_TUNE_1			 0x238 /* RX Force VCO Tune 1 */
 #define REG_RX_ALC_VARACTOR			 0x239 /* RX ALC/Varactor */
 #define REG_RX_VCO_OUTPUT			 0x23A /* RX VCO Output */
@@ -1013,6 +1015,8 @@
 /*
  *	REG_TPM_MODE_ENABLE
  */
+#define TX2_MON_ENABLE		     	     (1 << 7) /* Tx2 Monitor Enable */
+#define TX1_MON_ENABLE		     	     (1 << 5) /* Tx1 Monitor Enable */
 #define ONE_SHOT_MODE			     (1 << 6) /* One Shot Mode */
 #define TX_MON_DURATION(x)		     (((x) & 0xF) << 0) /* Tx Mon Duration<3:0> */
 
@@ -1372,7 +1376,7 @@
  *	REG_SMALL_LMT_OVERLOAD_THRESH
  */
 #define FORCE_PD_RESET_RX2		     (1 << 7) /* Force PD Reset Rx2 */
-#define FOR_PD_RESET_RX1			     (1 << 6) /* For PD Reset Rx1 */
+#define FORCE_PD_RESET_RX1		     (1 << 6) /* Force PD Reset Rx1 */
 #define SMALL_LMT_OVERLOAD_THRESH(x)	     (((x) & 0x3F) << 0) /* Small LMT Overload Threshold<5:0> */
 
 /*
@@ -2360,10 +2364,19 @@
 #define RX_FAST_LOCK_PROFILE(x)		     (((x) & 0x7) << 5) /* Rx Fast Lock Profile<2:0> */
 
 /*
+ *	REG_RX_FAST_LOCK_PROGRAM_ADDR
+ */
+#define RX_FAST_LOCK_PROFILE_ADDR(x)	     (((x) & 0x7) << 4) /* Rx Fast Lock Profile<2:0> */
+#define RX_FAST_LOCK_PROFILE_WORD(x)	     (((x) & 0xF) << 0) /* Configuration Word <3:0> */
+
+
+/*
  *	REG_RX_FAST_LOCK_PROGRAM_CTRL
  */
 #define RX_FAST_LOCK_PROGRAM_WRITE	     (1 << 1) /* Rx Fast Lock Program Write */
 #define RX_FAST_LOCK_PROGRAM_CLOCK_ENABLE     (1 << 0) /* Rx Fast Lock Program Clock Enable */
+
+#define RX_FAST_LOCK_CONFIG_WORD_NUM	     16
 
 /*
  *	REG_RX_LO_GEN_POWER_MODE
@@ -2766,13 +2779,14 @@
 #define MAX_LPF_GAIN			24
 #define MAX_DIG_GAIN			31
 
+#define MAX_BBPLL_FREF			70000000UL /* 70 MHz */
 #define MIN_BBPLL_FREQ			715000000UL /* 715 MHz */
 #define MAX_BBPLL_FREQ			1430000000UL /* 1430 MHz */
 #define MAX_BBPLL_DIV			64
 #define MIN_BBPLL_DIV			2
 
-#define MIN_ADC_CLK			10500000UL /* 10.5MHz */
-#define MAX_ADC_CLK			672000000UL /* 672 MHz */
+#define MIN_ADC_CLK			(MIN_BBPLL_FREQ / MAX_BBPLL_DIV) /* 11.17MHz */
+#define MAX_ADC_CLK			640000000UL /* 640 MHz */
 #define MAX_DAC_CLK			(MAX_ADC_CLK / 2)
 
 #define MAX_MBYTE_SPI			8
@@ -2780,6 +2794,8 @@
 #define RFPLL_MODULUS			8388593UL
 #define BBPLL_MODULUS			2088960UL
 
+#define MAX_SYNTH_FREF			80000000UL /* 80 MHz */
+#define MIN_SYNTH_FREF			10000000UL /* 10 MHz */
 #define MIN_VCO_FREQ_HZ			6000000000ULL
 #define MAX_CARRIER_FREQ_HZ		6000000000ULL
 #define MIN_CARRIER_FREQ_HZ		47000000ULL
@@ -3004,6 +3020,20 @@ struct auxadc_control {
 	u32			auxadc_decimation;
 };
 
+struct tx_monitor_control {
+	bool tx_mon_track_en;
+	bool one_shot_mode_en;
+	u32 low_high_gain_threshold_mdB;
+	u8 low_gain_dB;
+	u8 high_gain_dB;
+	u16 tx_mon_delay;
+	u16 tx_mon_duration;
+	u8 tx1_mon_front_end_gain;
+	u8 tx2_mon_front_end_gain;
+	u8 tx1_mon_lo_cm;
+	u8 tx2_mon_lo_cm;
+};
+
 enum ad9361_pdata_rx_freq {
 	BBPLL_FREQ,
 	ADC_FREQ,
@@ -3037,6 +3067,7 @@ enum ad9361_clkout {
 struct ad9361_phy_platform_data {
 	bool			rx2tx2;
 	bool			fdd;
+	bool			fdd_independent_mode;
 	bool			split_gt;
 	bool 			use_extclk;
 	bool			ensm_pin_pulse_mode;
@@ -3047,24 +3078,31 @@ struct ad9361_phy_platform_data {
 	bool			tdd_skip_vco_cal;
 	bool			use_ext_rx_lo;
 	bool			use_ext_tx_lo;
+	bool			rx1rx2_phase_inversion_en;
+	bool			qec_tracking_slow_mode_en;
 	u8			dc_offset_update_events;
 	u8			dc_offset_attenuation_high;
 	u8			dc_offset_attenuation_low;
 	u8			rf_dc_offset_count_high;
 	u8			rf_dc_offset_count_low;
+	u8			dig_interface_tune_skipmode;
 	u32			dcxo_coarse;
 	u32			dcxo_fine;
 	u32			rf_rx_input_sel;
 	u32			rf_tx_output_sel;
 	unsigned long		rx_path_clks[NUM_RX_CLOCKS];
 	unsigned long		tx_path_clks[NUM_TX_CLOCKS];
+	u32			trx_synth_max_fref;
 	u64			rx_synth_freq;
 	u64			tx_synth_freq;
 	u32			rf_rx_bandwidth_Hz;
 	u32			rf_tx_bandwidth_Hz;
 	int			tx_atten;
 	bool			update_tx_gain_via_alert;
-	int 			gpio_resetb;
+	u32			rx_fastlock_delay_ns;
+	u32			tx_fastlock_delay_ns;
+	bool			trx_fastlock_pinctrl_en[2];
+
 	enum ad9361_clkout	ad9361_clkout_mode;
 
 	struct gain_control	gain_ctrl;
@@ -3074,6 +3112,13 @@ struct ad9361_phy_platform_data {
 	struct elna_control	elna_ctrl;
 	struct auxadc_control	auxadc_ctrl;
 	struct auxdac_control	auxdac_ctrl;
+	struct tx_monitor_control txmon_ctrl;
+
+	struct gpio_desc			*reset_gpio;
+	/*  MCS SYNC */
+	struct gpio_desc			*sync_gpio;
+	struct gpio_desc			*cal_sw1_gpio;
+	struct gpio_desc			*cal_sw2_gpio;
 
 };
 

@@ -427,7 +427,8 @@ struct drm_encoder *axi_hdmi_encoder_create(struct drm_device *dev)
 			DRM_MODE_ENCODER_TMDS);
 	drm_encoder_helper_add(encoder, &axi_hdmi_encoder_helper_funcs);
 
-	encoder_drv = to_drm_i2c_encoder_driver(priv->encoder_slave->driver);
+	encoder_drv =
+	to_drm_i2c_encoder_driver(to_i2c_driver(priv->encoder_slave->dev.driver));
 	encoder_drv->encoder_init(priv->encoder_slave, dev,
 		&axi_hdmi_encoder->encoder);
 
@@ -495,7 +496,7 @@ static enum drm_connector_status axi_hdmi_connector_detect(
 
 static void axi_hdmi_connector_destroy(struct drm_connector *connector)
 {
-	drm_sysfs_connector_remove(connector);
+	drm_connector_unregister(connector);
 	drm_connector_cleanup(connector);
 }
 
@@ -519,7 +520,7 @@ static int axi_hdmi_connector_init(struct drm_device *dev,
 	drm_connector_init(dev, connector, &axi_hdmi_connector_funcs, type);
 	drm_connector_helper_add(connector, &axi_hdmi_connector_helper_funcs);
 
-	err = drm_sysfs_connector_add(connector);
+	err = drm_connector_register(connector);
 	if (err)
 		goto err_connector;
 
@@ -534,7 +535,7 @@ static int axi_hdmi_connector_init(struct drm_device *dev,
 	return 0;
 
 err_sysfs:
-	drm_sysfs_connector_remove(connector);
+	drm_connector_unregister(connector);
 err_connector:
 	drm_connector_cleanup(connector);
 	return err;

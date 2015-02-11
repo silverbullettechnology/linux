@@ -25,7 +25,7 @@ struct drm_plane;
 void xilinx_drm_plane_dpms(struct drm_plane *base_plane, int dpms);
 void xilinx_drm_plane_commit(struct drm_plane *base_plane);
 int xilinx_drm_plane_mode_set(struct drm_plane *base_plane,
-			      struct drm_crtc *crtc, struct drm_framebuffer *fb,
+			      struct drm_framebuffer *fb,
 			      int crtc_x, int crtc_y,
 			      unsigned int crtc_w, unsigned int crtc_h,
 			      uint32_t src_x, uint32_t src_y,
@@ -36,17 +36,22 @@ uint32_t xilinx_drm_plane_get_format(struct drm_plane *base_plane);
 /* plane manager operations */
 struct xilinx_drm_plane_manager;
 
+void
+xilinx_drm_plane_manager_mode_set(struct xilinx_drm_plane_manager *manager,
+				  unsigned int crtc_w, unsigned int crtc_h);
+void xilinx_drm_plane_manager_dpms(struct xilinx_drm_plane_manager *manager,
+				   int dpms);
 struct drm_plane *
 xilinx_drm_plane_create_private(struct xilinx_drm_plane_manager *manager,
 				unsigned int possible_crtcs);
-void xilinx_drm_plane_destroy_private(struct xilinx_drm_plane_manager *manager,
-				      struct drm_plane *base_plane);
 int xilinx_drm_plane_create_planes(struct xilinx_drm_plane_manager *manager,
 				   unsigned int possible_crtcs);
-void xilinx_drm_plane_destroy_planes(struct xilinx_drm_plane_manager *manager);
 
 bool xilinx_drm_plane_check_format(struct xilinx_drm_plane_manager *manager,
 				   uint32_t format);
+int xilinx_drm_plane_get_num_planes(struct xilinx_drm_plane_manager *manager);
+
+void xilinx_drm_plane_restore(struct xilinx_drm_plane_manager *manager);
 
 struct xilinx_drm_plane_manager *
 xilinx_drm_plane_probe_manager(struct drm_device *drm);

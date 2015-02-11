@@ -63,7 +63,7 @@
 #define FSCTL_SET_OBJECT_ID_EXTENDED 0x000900BC /* BB add struct */
 #define FSCTL_CREATE_OR_GET_OBJECT_ID 0x000900C0 /* BB add struct */
 #define FSCTL_SET_SPARSE             0x000900C4 /* BB add struct */
-#define FSCTL_SET_ZERO_DATA          0x000900C8 /* BB add struct */
+#define FSCTL_SET_ZERO_DATA          0x000980C8
 #define FSCTL_SET_ENCRYPTION         0x000900D7 /* BB add struct */
 #define FSCTL_ENCRYPTION_FSCTL_IO    0x000900DB /* BB add struct */
 #define FSCTL_WRITE_RAW_ENCRYPTED    0x000900DF /* BB add struct */
@@ -90,7 +90,7 @@
 #define FSCTL_LMR_REQUEST_RESILIENCY 0x001401D4 /* BB add struct */
 #define FSCTL_LMR_GET_LINK_TRACK_INF 0x001400E8 /* BB add struct */
 #define FSCTL_LMR_SET_LINK_TRACK_INF 0x001400EC /* BB add struct */
-#define FSCTL_VALIDATE_NEGOTIATE_INFO 0x00140204 /* BB add struct */
+#define FSCTL_VALIDATE_NEGOTIATE_INFO 0x00140204
 /* Perform server-side data movement */
 #define FSCTL_SRV_COPYCHUNK 0x001440F2
 #define FSCTL_SRV_COPYCHUNK_WRITE 0x001480F2

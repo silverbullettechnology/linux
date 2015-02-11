@@ -497,10 +497,11 @@ struct usb_device *usb_alloc_dev(struct usb_device *parent,
 		dev->authorized = 1;
 	else {
 		dev->authorized = usb_hcd->authorized_default;
-		dev->wusb = usb_bus_is_wusb(bus)? 1 : 0;
+		dev->wusb = usb_bus_is_wusb(bus) ? 1 : 0;
 	}
 	return dev;
 }
+EXPORT_SYMBOL_GPL(usb_alloc_dev);
 
 /**
  * usb_get_dev - increments the reference count of the usb device structure

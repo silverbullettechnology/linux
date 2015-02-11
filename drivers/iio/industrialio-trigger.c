@@ -56,25 +56,16 @@ static struct attribute *iio_trig_dev_attrs[] = {
 	&dev_attr_name.attr,
 	NULL,
 };
-
-static struct attribute_group iio_trig_attr_group = {
-	.attrs	= iio_trig_dev_attrs,
-};
-
-static const struct attribute_group *iio_trig_attr_groups[] = {
-	&iio_trig_attr_group,
-	NULL
-};
+ATTRIBUTE_GROUPS(iio_trig_dev);
 
 int iio_trigger_register(struct iio_trigger *trig_info)
 {
 	int ret;
 
 	trig_info->id = ida_simple_get(&iio_trigger_ida, 0, 0, GFP_KERNEL);
-	if (trig_info->id < 0) {
-		ret = trig_info->id;
-		goto error_ret;
-	}
+	if (trig_info->id < 0)
+		return trig_info->id;
+
 	/* Set the name used for the sysfs directory etc */
 	dev_set_name(&trig_info->dev, "trigger%ld",
 		     (unsigned long) trig_info->id);
@@ -92,7 +83,6 @@ int iio_trigger_register(struct iio_trigger *trig_info)
 
 error_unregister_id:
 	ida_simple_remove(&iio_trigger_ida, trig_info->id);
-error_ret:
 	return ret;
 }
 EXPORT_SYMBOL(iio_trigger_register);
@@ -125,9 +115,8 @@ static struct iio_trigger *iio_trigger_find_by_name(const char *name,
 	return trig;
 }
 
-void iio_trigger_poll(struct iio_trigger *trig, s64 time)
+void iio_trigger_poll(struct iio_trigger *trig)
 {
-	unsigned int num_consumers; 
 	int i;
 
 	if (!atomic_read(&trig->use_count)) {
@@ -145,14 +134,13 @@ EXPORT_SYMBOL(iio_trigger_poll);
 
 irqreturn_t iio_trigger_generic_data_rdy_poll(int irq, void *private)
 {
-	iio_trigger_poll(private, iio_get_time_ns());
+	iio_trigger_poll(private);
 	return IRQ_HANDLED;
 }
 EXPORT_SYMBOL(iio_trigger_generic_data_rdy_poll);
 
-void iio_trigger_poll_chained(struct iio_trigger *trig, s64 time)
+void iio_trigger_poll_chained(struct iio_trigger *trig)
 {
-	unsigned int num_consumers; 
 	int i;
 
 	if (!atomic_read(&trig->use_count)) {
@@ -174,7 +162,7 @@ void iio_trigger_notify_done(struct iio_trigger *trig)
 		trig->ops->try_reenable)
 		if (trig->ops->try_reenable(trig))
 			/* Missed an interrupt so launch new poll now */
-			iio_trigger_poll(trig, 0);
+			iio_trigger_poll(trig);
 }
 EXPORT_SYMBOL(iio_trigger_notify_done);
 
@@ -245,13 +233,12 @@ static int iio_trigger_detach_poll_func(struct iio_trigger *trig,
 	if (trig->ops && trig->ops->set_trigger_state && no_other_users) {
 		ret = trig->ops->set_trigger_state(trig, false);
 		if (ret)
-			goto error_ret;
+			return ret;
 	}
 	iio_trigger_put_irq(trig, pf->irq);
 	free_irq(pf->irq, pf);
 	module_put(pf->indio_dev->info->driver_module);
 
-error_ret:
 	return ret;
 }
 
@@ -321,7 +308,7 @@ static ssize_t iio_trigger_read_current(struct device *dev,
  * iio_trigger_write_current() - trigger consumer sysfs set current trigger
  *
  * For trigger consumers the current_trigger interface allows the trigger
- * used for this device to be specified at run time based on the triggers
+ * used for this device to be specified at run time based on the trigger's
  * name.
  **/
 static ssize_t iio_trigger_write_current(struct device *dev,
@@ -359,7 +346,7 @@ static ssize_t iio_trigger_write_current(struct device *dev,
 
 	indio_dev->trig = trig;
 
-	if (oldtrig && indio_dev->trig != oldtrig)
+	if (oldtrig)
 		iio_trigger_put(oldtrig);
 	if (indio_dev->trig)
 		iio_trigger_get(indio_dev->trig);
@@ -406,7 +393,7 @@ static void iio_trig_release(struct device *device)
 
 static struct device_type iio_trig_type = {
 	.release = iio_trig_release,
-	.groups = iio_trig_attr_groups,
+	.groups = iio_trig_dev_groups,
 };
 
 static void iio_trig_subirqmask(struct irq_data *d)
@@ -509,6 +496,23 @@ static int devm_iio_trigger_match(struct device *dev, void *res, void *data)
 	return *r == data;
 }
 
+/**
+ * devm_iio_trigger_alloc - Resource-managed iio_trigger_alloc()
+ * @dev:		Device to allocate iio_trigger for
+ * @fmt:		trigger name format. If it includes format
+ *			specifiers, the additional arguments following
+ *			format are formatted and inserted in the resulting
+ *			string replacing their respective specifiers.
+ *
+ * Managed iio_trigger_alloc.  iio_trigger allocated with this function is
+ * automatically freed on driver detach.
+ *
+ * If an iio_trigger allocated with this function needs to be freed separately,
+ * devm_iio_trigger_free() must be used.
+ *
+ * RETURNS:
+ * Pointer to allocated iio_trigger on success, NULL on failure.
+ */
 struct iio_trigger *devm_iio_trigger_alloc(struct device *dev,
 						const char *fmt, ...)
 {
@@ -535,6 +539,13 @@ struct iio_trigger *devm_iio_trigger_alloc(struct device *dev,
 }
 EXPORT_SYMBOL_GPL(devm_iio_trigger_alloc);
 
+/**
+ * devm_iio_trigger_free - Resource-managed iio_trigger_free()
+ * @dev:		Device this iio_dev belongs to
+ * @iio_trig:		the iio_trigger associated with the device
+ *
+ * Free iio_trigger allocated with devm_iio_trigger_alloc().
+ */
 void devm_iio_trigger_free(struct device *dev, struct iio_trigger *iio_trig)
 {
 	int rc;
@@ -571,48 +582,3 @@ int iio_triggered_buffer_predisable(struct iio_dev *indio_dev)
 					     indio_dev->pollfunc);
 }
 EXPORT_SYMBOL(iio_triggered_buffer_predisable);
-
-int iio_simple_trigger_handler(int irq, void *devid)
-{
-	struct iio_poll_func *pf = devid;
-	struct iio_dev *indio_dev = pf->indio_dev;
-	struct iio_buffer *buffer = indio_dev->buffer;
-	const struct iio_chan_spec *ch;
-	unsigned int val;
-	u8 sample[100];
-	u8 *p = sample;
-	int ret;
-	int i;
-
-	ret = iio_buffer_remove_sample(buffer, sample);
-	if (ret < 0)
-		return IRQ_HANDLED;
-
-	for_each_set_bit(i,
-		indio_dev->active_scan_mask,
-		indio_dev->masklength) {
-		ch = iio_find_channel_from_si(indio_dev, i);
-
-		p = PTR_ALIGN(p, ch->scan_type.storagebits / 8);
-
-		switch (ch->scan_type.storagebits) {
-		case 32:
-			val = *((u32 *)p);
-			break;
-		case 16:
-			val = *((u16 *)p);
-			break;
-		case 8:
-			val = *((u8 *)p);
-			break;
-		default:
-			dev_err(&indio_dev->dev, "Unsupported storage size\n");
-			return IRQ_HANDLED;
-		}
-		indio_dev->info->write_raw(indio_dev, ch, val, 0, 0);
-
-		p += ch->scan_type.storagebits / 8;
-	}
-
-	return IRQ_HANDLED;
-}

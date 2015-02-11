@@ -320,7 +320,7 @@ static struct config_group *target_fabric_make_mappedlun(
 			struct se_node_acl, acl_group);
 	struct se_portal_group *se_tpg = se_nacl->se_tpg;
 	struct target_fabric_configfs *tf = se_tpg->se_tpg_wwn->wwn_tf;
-	struct se_lun_acl *lacl;
+	struct se_lun_acl *lacl = NULL;
 	struct config_item *acl_ci;
 	struct config_group *lacl_cg = NULL, *ml_stat_grp = NULL;
 	char *buf;
@@ -385,9 +385,9 @@ static struct config_group *target_fabric_make_mappedlun(
 	}
 
 	config_group_init_type_name(&lacl->se_lun_group, name,
-			&TF_CIT_TMPL(tf)->tfc_tpg_mappedlun_cit);
+			&tf->tf_cit_tmpl.tfc_tpg_mappedlun_cit);
 	config_group_init_type_name(&lacl->ml_stat_grps.stat_group,
-			"statistics", &TF_CIT_TMPL(tf)->tfc_tpg_mappedlun_stat_cit);
+			"statistics", &tf->tf_cit_tmpl.tfc_tpg_mappedlun_stat_cit);
 	lacl_cg->default_groups[0] = &lacl->ml_stat_grps.stat_group;
 	lacl_cg->default_groups[1] = NULL;
 
@@ -406,6 +406,7 @@ static struct config_group *target_fabric_make_mappedlun(
 out:
 	if (lacl_cg)
 		kfree(lacl_cg->default_groups);
+	kfree(lacl);
 	kfree(buf);
 	return ERR_PTR(ret);
 }
@@ -504,16 +505,16 @@ static struct config_group *target_fabric_make_nodeacl(
 	nacl_cg->default_groups[4] = NULL;
 
 	config_group_init_type_name(&se_nacl->acl_group, name,
-			&TF_CIT_TMPL(tf)->tfc_tpg_nacl_base_cit);
+			&tf->tf_cit_tmpl.tfc_tpg_nacl_base_cit);
 	config_group_init_type_name(&se_nacl->acl_attrib_group, "attrib",
-			&TF_CIT_TMPL(tf)->tfc_tpg_nacl_attrib_cit);
+			&tf->tf_cit_tmpl.tfc_tpg_nacl_attrib_cit);
 	config_group_init_type_name(&se_nacl->acl_auth_group, "auth",
-			&TF_CIT_TMPL(tf)->tfc_tpg_nacl_auth_cit);
+			&tf->tf_cit_tmpl.tfc_tpg_nacl_auth_cit);
 	config_group_init_type_name(&se_nacl->acl_param_group, "param",
-			&TF_CIT_TMPL(tf)->tfc_tpg_nacl_param_cit);
+			&tf->tf_cit_tmpl.tfc_tpg_nacl_param_cit);
 	config_group_init_type_name(&se_nacl->acl_fabric_stat_group,
 			"fabric_statistics",
-			&TF_CIT_TMPL(tf)->tfc_tpg_nacl_stat_cit);
+			&tf->tf_cit_tmpl.tfc_tpg_nacl_stat_cit);
 
 	return &se_nacl->acl_group;
 }
@@ -595,7 +596,7 @@ static struct config_group *target_fabric_make_np(
 
 	se_tpg_np->tpg_np_parent = se_tpg;
 	config_group_init_type_name(&se_tpg_np->tpg_np_group, name,
-			&TF_CIT_TMPL(tf)->tfc_tpg_np_base_cit);
+			&tf->tf_cit_tmpl.tfc_tpg_np_base_cit);
 
 	return &se_tpg_np->tpg_np_group;
 }
@@ -821,7 +822,7 @@ static int target_fabric_port_unlink(
 		tf->tf_ops.fabric_pre_unlink(se_tpg, lun);
 	}
 
-	core_dev_del_lun(se_tpg, lun->unpacked_lun);
+	core_dev_del_lun(se_tpg, lun);
 	return 0;
 }
 
@@ -899,27 +900,23 @@ static struct config_group *target_fabric_make_lun(
 	}
 
 	config_group_init_type_name(&lun->lun_group, name,
-			&TF_CIT_TMPL(tf)->tfc_tpg_port_cit);
+			&tf->tf_cit_tmpl.tfc_tpg_port_cit);
 	config_group_init_type_name(&lun->port_stat_grps.stat_group,
-			"statistics", &TF_CIT_TMPL(tf)->tfc_tpg_port_stat_cit);
+			"statistics", &tf->tf_cit_tmpl.tfc_tpg_port_stat_cit);
 	lun_cg->default_groups[0] = &lun->port_stat_grps.stat_group;
 	lun_cg->default_groups[1] = NULL;
 
 	port_stat_grp = &lun->port_stat_grps.stat_group;
-	port_stat_grp->default_groups =  kzalloc(sizeof(struct config_group) * 3,
+	port_stat_grp->default_groups =  kzalloc(sizeof(struct config_group *) * 4,
 				GFP_KERNEL);
 	if (!port_stat_grp->default_groups) {
 		pr_err("Unable to allocate port_stat_grp->default_groups\n");
-		errno = -ENOMEM;
-		goto out;
+		kfree(lun_cg->default_groups);
+		return ERR_PTR(-ENOMEM);
 	}
 	target_stat_setup_port_default_groups(lun);
 
 	return &lun->lun_group;
-out:
-	if (lun_cg)
-		kfree(lun_cg->default_groups);
-	return ERR_PTR(errno);
 }
 
 static void target_fabric_drop_lun(
@@ -1056,19 +1053,19 @@ static struct config_group *target_fabric_make_tpg(
 	se_tpg->tpg_group.default_groups[6] = NULL;
 
 	config_group_init_type_name(&se_tpg->tpg_group, name,
-			&TF_CIT_TMPL(tf)->tfc_tpg_base_cit);
+			&tf->tf_cit_tmpl.tfc_tpg_base_cit);
 	config_group_init_type_name(&se_tpg->tpg_lun_group, "lun",
-			&TF_CIT_TMPL(tf)->tfc_tpg_lun_cit);
+			&tf->tf_cit_tmpl.tfc_tpg_lun_cit);
 	config_group_init_type_name(&se_tpg->tpg_np_group, "np",
-			&TF_CIT_TMPL(tf)->tfc_tpg_np_cit);
+			&tf->tf_cit_tmpl.tfc_tpg_np_cit);
 	config_group_init_type_name(&se_tpg->tpg_acl_group, "acls",
-			&TF_CIT_TMPL(tf)->tfc_tpg_nacl_cit);
+			&tf->tf_cit_tmpl.tfc_tpg_nacl_cit);
 	config_group_init_type_name(&se_tpg->tpg_attrib_group, "attrib",
-			&TF_CIT_TMPL(tf)->tfc_tpg_attrib_cit);
+			&tf->tf_cit_tmpl.tfc_tpg_attrib_cit);
 	config_group_init_type_name(&se_tpg->tpg_auth_group, "auth",
-			&TF_CIT_TMPL(tf)->tfc_tpg_auth_cit);
+			&tf->tf_cit_tmpl.tfc_tpg_auth_cit);
 	config_group_init_type_name(&se_tpg->tpg_param_group, "param",
-			&TF_CIT_TMPL(tf)->tfc_tpg_param_cit);
+			&tf->tf_cit_tmpl.tfc_tpg_param_cit);
 
 	return &se_tpg->tpg_group;
 }
@@ -1155,9 +1152,9 @@ static struct config_group *target_fabric_make_wwn(
 	wwn->wwn_group.default_groups[1] = NULL;
 
 	config_group_init_type_name(&wwn->wwn_group, name,
-			&TF_CIT_TMPL(tf)->tfc_tpg_cit);
+			&tf->tf_cit_tmpl.tfc_tpg_cit);
 	config_group_init_type_name(&wwn->fabric_stat_group, "fabric_statistics",
-			&TF_CIT_TMPL(tf)->tfc_wwn_fabric_stats_cit);
+			&tf->tf_cit_tmpl.tfc_wwn_fabric_stats_cit);
 
 	return &wwn->wwn_group;
 }

@@ -367,6 +367,7 @@ static struct scsi_host_template megaraid_template_g = {
 	.eh_host_reset_handler		= megaraid_reset_handler,
 	.change_queue_depth		= megaraid_change_queue_depth,
 	.use_clustering			= ENABLE_CLUSTERING,
+	.no_write_same			= 1,
 	.sdev_attrs			= megaraid_sdev_attrs,
 	.shost_attrs			= megaraid_shost_attrs,
 };
@@ -534,7 +535,6 @@ megaraid_probe_one(struct pci_dev *pdev, const struct pci_device_id *id)
 	return 0;
 
 out_cmm_unreg:
-	pci_set_drvdata(pdev, NULL);
 	megaraid_cmm_unregister(adapter);
 out_fini_mbox:
 	megaraid_fini_mbox(adapter);
@@ -593,11 +593,6 @@ megaraid_detach_one(struct pci_dev *pdev)
 
 	// detach from the IO sub-system
 	megaraid_io_detach(adapter);
-
-	// reset the device state in the PCI structure. We check this
-	// condition when we enter here. If the device state is NULL,
-	// that would mean the device has already been removed
-	pci_set_drvdata(pdev, NULL);
 
 	// Unregister from common management module
 	//
@@ -1003,8 +998,9 @@ megaraid_alloc_cmd_packets(adapter_t *adapter)
 	 * Allocate the common 16-byte aligned memory for the handshake
 	 * mailbox.
 	 */
-	raid_dev->una_mbox64 = pci_alloc_consistent(adapter->pdev,
-			sizeof(mbox64_t), &raid_dev->una_mbox64_dma);
+	raid_dev->una_mbox64 = pci_zalloc_consistent(adapter->pdev,
+						     sizeof(mbox64_t),
+						     &raid_dev->una_mbox64_dma);
 
 	if (!raid_dev->una_mbox64) {
 		con_log(CL_ANN, (KERN_WARNING
@@ -1012,7 +1008,6 @@ megaraid_alloc_cmd_packets(adapter_t *adapter)
 			__LINE__));
 		return -1;
 	}
-	memset(raid_dev->una_mbox64, 0, sizeof(mbox64_t));
 
 	/*
 	 * Align the mailbox at 16-byte boundary
@@ -1031,8 +1026,8 @@ megaraid_alloc_cmd_packets(adapter_t *adapter)
 			align;
 
 	// Allocate memory for commands issued internally
-	adapter->ibuf = pci_alloc_consistent(pdev, MBOX_IBUF_SIZE,
-				&adapter->ibuf_dma_h);
+	adapter->ibuf = pci_zalloc_consistent(pdev, MBOX_IBUF_SIZE,
+					      &adapter->ibuf_dma_h);
 	if (!adapter->ibuf) {
 
 		con_log(CL_ANN, (KERN_WARNING
@@ -1041,7 +1036,6 @@ megaraid_alloc_cmd_packets(adapter_t *adapter)
 
 		goto out_free_common_mbox;
 	}
-	memset(adapter->ibuf, 0, MBOX_IBUF_SIZE);
 
 	// Allocate memory for our SCSI Command Blocks and their associated
 	// memory
@@ -2977,8 +2971,8 @@ megaraid_mbox_product_info(adapter_t *adapter)
 	 * Issue an ENQUIRY3 command to find out certain adapter parameters,
 	 * e.g., max channels, max commands etc.
 	 */
-	pinfo = pci_alloc_consistent(adapter->pdev, sizeof(mraid_pinfo_t),
-			&pinfo_dma_h);
+	pinfo = pci_zalloc_consistent(adapter->pdev, sizeof(mraid_pinfo_t),
+				      &pinfo_dma_h);
 
 	if (pinfo == NULL) {
 		con_log(CL_ANN, (KERN_WARNING
@@ -2987,7 +2981,6 @@ megaraid_mbox_product_info(adapter_t *adapter)
 
 		return -1;
 	}
-	memset(pinfo, 0, sizeof(mraid_pinfo_t));
 
 	mbox->xferaddr = (uint32_t)adapter->ibuf_dma_h;
 	memset((void *)adapter->ibuf, 0, MBOX_IBUF_SIZE);

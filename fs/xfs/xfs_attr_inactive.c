@@ -18,22 +18,20 @@
  */
 #include "xfs.h"
 #include "xfs_fs.h"
+#include "xfs_shared.h"
 #include "xfs_format.h"
+#include "xfs_log_format.h"
+#include "xfs_trans_resv.h"
 #include "xfs_bit.h"
-#include "xfs_log.h"
-#include "xfs_trans.h"
 #include "xfs_sb.h"
 #include "xfs_ag.h"
 #include "xfs_mount.h"
+#include "xfs_da_format.h"
 #include "xfs_da_btree.h"
-#include "xfs_bmap_btree.h"
-#include "xfs_alloc_btree.h"
-#include "xfs_ialloc_btree.h"
-#include "xfs_alloc.h"
-#include "xfs_btree.h"
-#include "xfs_attr_remote.h"
-#include "xfs_dinode.h"
 #include "xfs_inode.h"
+#include "xfs_alloc.h"
+#include "xfs_attr_remote.h"
+#include "xfs_trans.h"
 #include "xfs_inode_item.h"
 #include "xfs_bmap.h"
 #include "xfs_attr.h"
@@ -41,7 +39,8 @@
 #include "xfs_error.h"
 #include "xfs_quota.h"
 #include "xfs_trace.h"
-#include "xfs_trans_priv.h"
+#include "xfs_dinode.h"
+#include "xfs_dir2.h"
 
 /*
  * Look at all the extents for this logical region,
@@ -77,7 +76,7 @@ xfs_attr3_leaf_freextent(
 		error = xfs_bmapi_read(dp, (xfs_fileoff_t)tblkno, tblkcnt,
 				       &map, &nmap, XFS_BMAPI_ATTRFORK);
 		if (error) {
-			return(error);
+			return error;
 		}
 		ASSERT(nmap == 1);
 		ASSERT(map.br_startblock != DELAYSTARTBLOCK);
@@ -96,21 +95,21 @@ xfs_attr3_leaf_freextent(
 					dp->i_mount->m_ddev_targp,
 					dblkno, dblkcnt, 0);
 			if (!bp)
-				return ENOMEM;
+				return -ENOMEM;
 			xfs_trans_binval(*trans, bp);
 			/*
 			 * Roll to next transaction.
 			 */
 			error = xfs_trans_roll(trans, dp);
 			if (error)
-				return (error);
+				return error;
 		}
 
 		tblkno += map.br_blockcount;
 		tblkcnt -= map.br_blockcount;
 	}
 
-	return(0);
+	return 0;
 }
 
 /*
@@ -228,17 +227,17 @@ xfs_attr3_node_inactive(
 	 */
 	if (level > XFS_DA_NODE_MAXDEPTH) {
 		xfs_trans_brelse(*trans, bp);	/* no locks for later trans */
-		return XFS_ERROR(EIO);
+		return -EIO;
 	}
 
 	node = bp->b_addr;
-	xfs_da3_node_hdr_from_disk(&ichdr, node);
+	dp->d_ops->node_hdr_from_disk(&ichdr, node);
 	parent_blkno = bp->b_bn;
 	if (!ichdr.count) {
 		xfs_trans_brelse(*trans, bp);
 		return 0;
 	}
-	btree = xfs_da3_node_tree_p(node);
+	btree = dp->d_ops->node_tree_p(node);
 	child_fsb = be32_to_cpu(btree[0].before);
 	xfs_trans_brelse(*trans, bp);	/* no locks for later trans */
 
@@ -257,7 +256,7 @@ xfs_attr3_node_inactive(
 		error = xfs_da3_node_read(*trans, dp, child_fsb, -2, &child_bp,
 						XFS_ATTR_FORK);
 		if (error)
-			return(error);
+			return error;
 		if (child_bp) {
 						/* save for re-read later */
 			child_blkno = XFS_BUF_ADDR(child_bp);
@@ -278,7 +277,7 @@ xfs_attr3_node_inactive(
 							child_bp);
 				break;
 			default:
-				error = XFS_ERROR(EIO);
+				error = -EIO;
 				xfs_trans_brelse(*trans, child_bp);
 				break;
 			}
@@ -361,7 +360,7 @@ xfs_attr3_root_inactive(
 		error = xfs_attr3_leaf_inactive(trans, dp, bp);
 		break;
 	default:
-		error = XFS_ERROR(EIO);
+		error = -EIO;
 		xfs_trans_brelse(*trans, bp);
 		break;
 	}
@@ -415,7 +414,7 @@ xfs_attr_inactive(xfs_inode_t *dp)
 	error = xfs_trans_reserve(trans, &M_RES(mp)->tr_attrinval, 0, 0);
 	if (error) {
 		xfs_trans_cancel(trans, 0);
-		return(error);
+		return error;
 	}
 	xfs_ilock(dp, XFS_ILOCK_EXCL);
 
@@ -444,10 +443,10 @@ xfs_attr_inactive(xfs_inode_t *dp)
 	error = xfs_trans_commit(trans, XFS_TRANS_RELEASE_LOG_RES);
 	xfs_iunlock(dp, XFS_ILOCK_EXCL);
 
-	return(error);
+	return error;
 
 out:
 	xfs_trans_cancel(trans, XFS_TRANS_RELEASE_LOG_RES|XFS_TRANS_ABORT);
 	xfs_iunlock(dp, XFS_ILOCK_EXCL);
-	return(error);
+	return error;
 }

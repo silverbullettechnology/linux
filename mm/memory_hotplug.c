@@ -9,7 +9,6 @@
 #include <linux/swap.h>
 #include <linux/interrupt.h>
 #include <linux/pagemap.h>
-#include <linux/bootmem.h>
 #include <linux/compiler.h>
 #include <linux/export.h>
 #include <linux/pagevec.h>
@@ -31,6 +30,8 @@
 #include <linux/firmware-map.h>
 #include <linux/stop_machine.h>
 #include <linux/hugetlb.h>
+#include <linux/memblock.h>
+#include <linux/bootmem.h>
 
 #include <asm/tlbflush.h>
 
@@ -46,19 +47,84 @@
 static void generic_online_page(struct page *page);
 
 static online_page_callback_t online_page_callback = generic_online_page;
+static DEFINE_MUTEX(online_page_callback_lock);
 
-DEFINE_MUTEX(mem_hotplug_mutex);
+/* The same as the cpu_hotplug lock, but for memory hotplug. */
+static struct {
+	struct task_struct *active_writer;
+	struct mutex lock; /* Synchronizes accesses to refcount, */
+	/*
+	 * Also blocks the new readers during
+	 * an ongoing mem hotplug operation.
+	 */
+	int refcount;
 
-void lock_memory_hotplug(void)
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+	struct lockdep_map dep_map;
+#endif
+} mem_hotplug = {
+	.active_writer = NULL,
+	.lock = __MUTEX_INITIALIZER(mem_hotplug.lock),
+	.refcount = 0,
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+	.dep_map = {.name = "mem_hotplug.lock" },
+#endif
+};
+
+/* Lockdep annotations for get/put_online_mems() and mem_hotplug_begin/end() */
+#define memhp_lock_acquire_read() lock_map_acquire_read(&mem_hotplug.dep_map)
+#define memhp_lock_acquire()      lock_map_acquire(&mem_hotplug.dep_map)
+#define memhp_lock_release()      lock_map_release(&mem_hotplug.dep_map)
+
+void get_online_mems(void)
 {
-	mutex_lock(&mem_hotplug_mutex);
+	might_sleep();
+	if (mem_hotplug.active_writer == current)
+		return;
+	memhp_lock_acquire_read();
+	mutex_lock(&mem_hotplug.lock);
+	mem_hotplug.refcount++;
+	mutex_unlock(&mem_hotplug.lock);
+
 }
 
-void unlock_memory_hotplug(void)
+void put_online_mems(void)
 {
-	mutex_unlock(&mem_hotplug_mutex);
+	if (mem_hotplug.active_writer == current)
+		return;
+	mutex_lock(&mem_hotplug.lock);
+
+	if (WARN_ON(!mem_hotplug.refcount))
+		mem_hotplug.refcount++; /* try to fix things up */
+
+	if (!--mem_hotplug.refcount && unlikely(mem_hotplug.active_writer))
+		wake_up_process(mem_hotplug.active_writer);
+	mutex_unlock(&mem_hotplug.lock);
+	memhp_lock_release();
+
 }
 
+static void mem_hotplug_begin(void)
+{
+	mem_hotplug.active_writer = current;
+
+	memhp_lock_acquire();
+	for (;;) {
+		mutex_lock(&mem_hotplug.lock);
+		if (likely(!mem_hotplug.refcount))
+			break;
+		__set_current_state(TASK_UNINTERRUPTIBLE);
+		mutex_unlock(&mem_hotplug.lock);
+		schedule();
+	}
+}
+
+static void mem_hotplug_done(void)
+{
+	mem_hotplug.active_writer = NULL;
+	mutex_unlock(&mem_hotplug.lock);
+	memhp_lock_release();
+}
 
 /* add this memory to iomem resource */
 static struct resource *register_memory_resource(u64 start, u64 size)
@@ -219,8 +285,8 @@ void register_page_bootmem_info_node(struct pglist_data *pgdat)
 }
 #endif /* CONFIG_HAVE_BOOTMEM_INFO_NODE */
 
-static void grow_zone_span(struct zone *zone, unsigned long start_pfn,
-			   unsigned long end_pfn)
+static void __meminit grow_zone_span(struct zone *zone, unsigned long start_pfn,
+				     unsigned long end_pfn)
 {
 	unsigned long old_zone_end_pfn;
 
@@ -268,7 +334,7 @@ static void fix_zone_id(struct zone *zone, unsigned long start_pfn,
 }
 
 /* Can fail with -ENOMEM from allocating a wait table with vmalloc() or
- * alloc_bootmem_node_nopanic() */
+ * alloc_bootmem_node_nopanic()/memblock_virt_alloc_node_nopanic() */
 static int __ref ensure_zone_is_initialized(struct zone *zone,
 			unsigned long start_pfn, unsigned long num_pages)
 {
@@ -362,11 +428,10 @@ out_fail:
 	return -1;
 }
 
-static void grow_pgdat_span(struct pglist_data *pgdat, unsigned long start_pfn,
-			    unsigned long end_pfn)
+static void __meminit grow_pgdat_span(struct pglist_data *pgdat, unsigned long start_pfn,
+				      unsigned long end_pfn)
 {
-	unsigned long old_pgdat_end_pfn =
-		pgdat->node_start_pfn + pgdat->node_spanned_pages;
+	unsigned long old_pgdat_end_pfn = pgdat_end_pfn(pgdat);
 
 	if (!pgdat->node_spanned_pages || start_pfn < pgdat->node_start_pfn)
 		pgdat->node_start_pfn = start_pfn;
@@ -402,13 +467,12 @@ static int __meminit __add_zone(struct zone *zone, unsigned long phys_start_pfn)
 static int __meminit __add_section(int nid, struct zone *zone,
 					unsigned long phys_start_pfn)
 {
-	int nr_pages = PAGES_PER_SECTION;
 	int ret;
 
 	if (pfn_valid(phys_start_pfn))
 		return -EEXIST;
 
-	ret = sparse_add_one_section(zone, phys_start_pfn, nr_pages);
+	ret = sparse_add_one_section(zone, phys_start_pfn);
 
 	if (ret < 0)
 		return ret;
@@ -579,9 +643,9 @@ static void shrink_zone_span(struct zone *zone, unsigned long start_pfn,
 static void shrink_pgdat_span(struct pglist_data *pgdat,
 			      unsigned long start_pfn, unsigned long end_pfn)
 {
-	unsigned long pgdat_start_pfn =  pgdat->node_start_pfn;
-	unsigned long pgdat_end_pfn =
-		pgdat->node_start_pfn + pgdat->node_spanned_pages;
+	unsigned long pgdat_start_pfn = pgdat->node_start_pfn;
+	unsigned long p = pgdat_end_pfn(pgdat); /* pgdat_end_pfn namespace clash */
+	unsigned long pgdat_end_pfn = p;
 	unsigned long pfn;
 	struct mem_section *ms;
 	int nid = pgdat->node_id;
@@ -729,14 +793,16 @@ int set_online_page_callback(online_page_callback_t callback)
 {
 	int rc = -EINVAL;
 
-	lock_memory_hotplug();
+	get_online_mems();
+	mutex_lock(&online_page_callback_lock);
 
 	if (online_page_callback == generic_online_page) {
 		online_page_callback = callback;
 		rc = 0;
 	}
 
-	unlock_memory_hotplug();
+	mutex_unlock(&online_page_callback_lock);
+	put_online_mems();
 
 	return rc;
 }
@@ -746,14 +812,16 @@ int restore_online_page_callback(online_page_callback_t callback)
 {
 	int rc = -EINVAL;
 
-	lock_memory_hotplug();
+	get_online_mems();
+	mutex_lock(&online_page_callback_lock);
 
 	if (online_page_callback == callback) {
 		online_page_callback = generic_online_page;
 		rc = 0;
 	}
 
-	unlock_memory_hotplug();
+	mutex_unlock(&online_page_callback_lock);
+	put_online_mems();
 
 	return rc;
 }
@@ -901,7 +969,7 @@ int __ref online_pages(unsigned long pfn, unsigned long nr_pages, int online_typ
 	int ret;
 	struct memory_notify arg;
 
-	lock_memory_hotplug();
+	mem_hotplug_begin();
 	/*
 	 * This doesn't need a lock to do pfn_to_page().
 	 * The section can't be removed here because of the
@@ -909,23 +977,21 @@ int __ref online_pages(unsigned long pfn, unsigned long nr_pages, int online_typ
 	 */
 	zone = page_zone(pfn_to_page(pfn));
 
-	if ((zone_idx(zone) > ZONE_NORMAL || online_type == ONLINE_MOVABLE) &&
-	    !can_online_high_movable(zone)) {
-		unlock_memory_hotplug();
-		return -EINVAL;
-	}
+	ret = -EINVAL;
+	if ((zone_idx(zone) > ZONE_NORMAL ||
+	    online_type == MMOP_ONLINE_MOVABLE) &&
+	    !can_online_high_movable(zone))
+		goto out;
 
-	if (online_type == ONLINE_KERNEL && zone_idx(zone) == ZONE_MOVABLE) {
-		if (move_pfn_range_left(zone - 1, zone, pfn, pfn + nr_pages)) {
-			unlock_memory_hotplug();
-			return -EINVAL;
-		}
+	if (online_type == MMOP_ONLINE_KERNEL &&
+	    zone_idx(zone) == ZONE_MOVABLE) {
+		if (move_pfn_range_left(zone - 1, zone, pfn, pfn + nr_pages))
+			goto out;
 	}
-	if (online_type == ONLINE_MOVABLE && zone_idx(zone) == ZONE_MOVABLE - 1) {
-		if (move_pfn_range_right(zone, zone + 1, pfn, pfn + nr_pages)) {
-			unlock_memory_hotplug();
-			return -EINVAL;
-		}
+	if (online_type == MMOP_ONLINE_MOVABLE &&
+	    zone_idx(zone) == ZONE_MOVABLE - 1) {
+		if (move_pfn_range_right(zone, zone + 1, pfn, pfn + nr_pages))
+			goto out;
 	}
 
 	/* Previous code may changed the zone of the pfn range */
@@ -935,14 +1001,13 @@ int __ref online_pages(unsigned long pfn, unsigned long nr_pages, int online_typ
 	arg.nr_pages = nr_pages;
 	node_states_check_changes_online(nr_pages, zone, &arg);
 
-	nid = page_to_nid(pfn_to_page(pfn));
+	nid = pfn_to_nid(pfn);
 
 	ret = memory_notify(MEM_GOING_ONLINE, &arg);
 	ret = notifier_to_errno(ret);
 	if (ret) {
 		memory_notify(MEM_CANCEL_ONLINE, &arg);
-		unlock_memory_hotplug();
-		return ret;
+		goto out;
 	}
 	/*
 	 * If this zone is not populated, then it is not in zonelist.
@@ -966,8 +1031,7 @@ int __ref online_pages(unsigned long pfn, unsigned long nr_pages, int online_typ
 		       (((unsigned long long) pfn + nr_pages)
 			    << PAGE_SHIFT) - 1);
 		memory_notify(MEM_CANCEL_ONLINE, &arg);
-		unlock_memory_hotplug();
-		return ret;
+		goto out;
 	}
 
 	zone->present_pages += onlined_pages;
@@ -997,11 +1061,21 @@ int __ref online_pages(unsigned long pfn, unsigned long nr_pages, int online_typ
 
 	if (onlined_pages)
 		memory_notify(MEM_ONLINE, &arg);
-	unlock_memory_hotplug();
-
-	return 0;
+out:
+	mem_hotplug_done();
+	return ret;
 }
 #endif /* CONFIG_MEMORY_HOTPLUG_SPARSE */
+
+static void reset_node_present_pages(pg_data_t *pgdat)
+{
+	struct zone *z;
+
+	for (z = pgdat->node_zones; z < pgdat->node_zones + MAX_NR_ZONES; z++)
+		z->present_pages = 0;
+
+	pgdat->node_present_pages = 0;
+}
 
 /* we are OK calling __meminit stuff here - we have CONFIG_MEMORY_HOTPLUG */
 static pg_data_t __ref *hotadd_new_pgdat(int nid, u64 start)
@@ -1009,7 +1083,7 @@ static pg_data_t __ref *hotadd_new_pgdat(int nid, u64 start)
 	struct pglist_data *pgdat;
 	unsigned long zones_size[MAX_NR_ZONES] = {0};
 	unsigned long zholes_size[MAX_NR_ZONES] = {0};
-	unsigned long start_pfn = start >> PAGE_SHIFT;
+	unsigned long start_pfn = PFN_DOWN(start);
 
 	pgdat = NODE_DATA(nid);
 	if (!pgdat) {
@@ -1033,6 +1107,21 @@ static pg_data_t __ref *hotadd_new_pgdat(int nid, u64 start)
 	build_all_zonelists(pgdat, NULL);
 	mutex_unlock(&zonelists_mutex);
 
+	/*
+	 * zone->managed_pages is set to an approximate value in
+	 * free_area_init_core(), which will cause
+	 * /sys/device/system/node/nodeX/meminfo has wrong data.
+	 * So reset it to 0 before any memory is onlined.
+	 */
+	reset_node_managed_pages(pgdat);
+
+	/*
+	 * When memory is hot-added, all the memory is in offline state. So
+	 * clear all zones' present_pages because they will be updated in
+	 * online_pages() and offline_pages().
+	 */
+	reset_node_present_pages(pgdat);
+
 	return pgdat;
 }
 
@@ -1044,17 +1133,23 @@ static void rollback_node_hotadd(int nid, pg_data_t *pgdat)
 }
 
 
-/*
+/**
+ * try_online_node - online a node if offlined
+ *
  * called by cpu_up() to online a node without onlined memory.
  */
-int mem_online_node(int nid)
+int try_online_node(int nid)
 {
 	pg_data_t	*pgdat;
 	int	ret;
 
-	lock_memory_hotplug();
+	if (node_online(nid))
+		return 0;
+
+	mem_hotplug_begin();
 	pgdat = hotadd_new_pgdat(nid, 0);
 	if (!pgdat) {
+		pr_err("Cannot online node %d due to NULL pgdat\n", nid);
 		ret = -ENOMEM;
 		goto out;
 	}
@@ -1062,14 +1157,20 @@ int mem_online_node(int nid)
 	ret = register_one_node(nid);
 	BUG_ON(ret);
 
+	if (pgdat->node_zonelists->_zonerefs->zone == NULL) {
+		mutex_lock(&zonelists_mutex);
+		build_all_zonelists(NULL, NULL);
+		mutex_unlock(&zonelists_mutex);
+	}
+
 out:
-	unlock_memory_hotplug();
+	mem_hotplug_done();
 	return ret;
 }
 
 static int check_hotplug_memory_range(u64 start, u64 size)
 {
-	u64 start_pfn = start >> PAGE_SHIFT;
+	u64 start_pfn = PFN_DOWN(start);
 	u64 nr_pages = size >> PAGE_SHIFT;
 
 	/* Memory range must be aligned with section */
@@ -1082,6 +1183,34 @@ static int check_hotplug_memory_range(u64 start, u64 size)
 	}
 
 	return 0;
+}
+
+/*
+ * If movable zone has already been setup, newly added memory should be check.
+ * If its address is higher than movable zone, it should be added as movable.
+ * Without this check, movable zone may overlap with other zone.
+ */
+static int should_add_memory_movable(int nid, u64 start, u64 size)
+{
+	unsigned long start_pfn = start >> PAGE_SHIFT;
+	pg_data_t *pgdat = NODE_DATA(nid);
+	struct zone *movable_zone = pgdat->node_zones + ZONE_MOVABLE;
+
+	if (zone_is_empty(movable_zone))
+		return 0;
+
+	if (movable_zone->zone_start_pfn <= start_pfn)
+		return 1;
+
+	return 0;
+}
+
+int zone_for_memory(int nid, u64 start, u64 size, int zone_default)
+{
+	if (should_add_memory_movable(nid, start, size))
+		return ZONE_MOVABLE;
+
+	return zone_default;
 }
 
 /* we are OK calling __meminit stuff here - we have CONFIG_MEMORY_HOTPLUG */
@@ -1097,17 +1226,18 @@ int __ref add_memory(int nid, u64 start, u64 size)
 	if (ret)
 		return ret;
 
-	lock_memory_hotplug();
-
 	res = register_memory_resource(start, size);
 	ret = -EEXIST;
 	if (!res)
-		goto out;
+		return ret;
 
 	{	/* Stupid hack to suppress address-never-null warning */
 		void *p = NODE_DATA(nid);
 		new_pgdat = !p;
 	}
+
+	mem_hotplug_begin();
+
 	new_node = !node_online(nid);
 	if (new_node) {
 		pgdat = hotadd_new_pgdat(nid, start);
@@ -1147,7 +1277,7 @@ error:
 	release_memory_resource(res);
 
 out:
-	unlock_memory_hotplug();
+	mem_hotplug_done();
 	return ret;
 }
 EXPORT_SYMBOL_GPL(add_memory);
@@ -1203,7 +1333,7 @@ int is_mem_section_removable(unsigned long start_pfn, unsigned long nr_pages)
 /*
  * Confirm all pages in a range [start, end) is belongs to the same zone.
  */
-static int test_pages_in_a_zone(unsigned long start_pfn, unsigned long end_pfn)
+int test_pages_in_a_zone(unsigned long start_pfn, unsigned long end_pfn)
 {
 	unsigned long pfn;
 	struct zone *zone = NULL;
@@ -1299,7 +1429,7 @@ do_migrate_range(unsigned long start_pfn, unsigned long end_pfn)
 #ifdef CONFIG_DEBUG_VM
 			printk(KERN_ALERT "removing pfn %lx from LRU failed\n",
 			       pfn);
-			dump_page(page);
+			dump_page(page, "failed to remove from LRU");
 #endif
 			put_page(page);
 			/* Because we don't have big zone->lock. we should
@@ -1321,7 +1451,7 @@ do_migrate_range(unsigned long start_pfn, unsigned long end_pfn)
 		 * alloc_migrate_target should be improooooved!!
 		 * migrate_pages returns # of failed pages.
 		 */
-		ret = migrate_pages(&source, alloc_migrate_target, 0,
+		ret = migrate_pages(&source, alloc_migrate_target, NULL, 0,
 					MIGRATE_SYNC, MR_MEMORY_HOTPLUG);
 		if (ret)
 			putback_movable_pages(&source);
@@ -1411,6 +1541,37 @@ static bool can_offline_normal(struct zone *zone, unsigned long nr_pages)
 	return present_pages == 0;
 }
 #endif /* CONFIG_MOVABLE_NODE */
+
+static int __init cmdline_parse_movable_node(char *p)
+{
+#ifdef CONFIG_MOVABLE_NODE
+	/*
+	 * Memory used by the kernel cannot be hot-removed because Linux
+	 * cannot migrate the kernel pages. When memory hotplug is
+	 * enabled, we should prevent memblock from allocating memory
+	 * for the kernel.
+	 *
+	 * ACPI SRAT records all hotpluggable memory ranges. But before
+	 * SRAT is parsed, we don't know about it.
+	 *
+	 * The kernel image is loaded into memory at very early time. We
+	 * cannot prevent this anyway. So on NUMA system, we set any
+	 * node the kernel resides in as un-hotpluggable.
+	 *
+	 * Since on modern servers, one node could have double-digit
+	 * gigabytes memory, we can assume the memory around the kernel
+	 * image is also un-hotpluggable. So before SRAT is parsed, just
+	 * allocate memory near the kernel image to try the best to keep
+	 * the kernel away from hotpluggable memory.
+	 */
+	memblock_set_bottom_up(true);
+	movable_node_enabled = true;
+#else
+	pr_warn("movable_node option not supported\n");
+#endif
+	return 0;
+}
+early_param("movable_node", cmdline_parse_movable_node);
 
 /* check which state of node_states will be changed when offline memory */
 static void node_states_check_changes_offline(unsigned long nr_pages,
@@ -1523,7 +1684,7 @@ static int __ref __offline_pages(unsigned long start_pfn,
 	if (!test_pages_in_a_zone(start_pfn, end_pfn))
 		return -EINVAL;
 
-	lock_memory_hotplug();
+	mem_hotplug_begin();
 
 	zone = page_zone(pfn_to_page(start_pfn));
 	node = zone_to_nid(zone);
@@ -1630,7 +1791,7 @@ repeat:
 	writeback_set_ratelimit();
 
 	memory_notify(MEM_OFFLINE, &arg);
-	unlock_memory_hotplug();
+	mem_hotplug_done();
 	return 0;
 
 failed_removal:
@@ -1642,7 +1803,7 @@ failed_removal:
 	undo_isolate_page_range(start_pfn, end_pfn, MIGRATE_MOVABLE);
 
 out:
-	unlock_memory_hotplug();
+	mem_hotplug_done();
 	return ret;
 }
 
@@ -1702,7 +1863,7 @@ int walk_memory_range(unsigned long start_pfn, unsigned long end_pfn,
 }
 
 #ifdef CONFIG_MEMORY_HOTREMOVE
-static int is_memblock_offlined_cb(struct memory_block *mem, void *arg)
+static int check_memblock_offlined_cb(struct memory_block *mem, void *arg)
 {
 	int ret = !is_memblock_offlined(mem);
 
@@ -1777,7 +1938,6 @@ void try_offline_node(int nid)
 	unsigned long start_pfn = pgdat->node_start_pfn;
 	unsigned long end_pfn = start_pfn + pgdat->node_spanned_pages;
 	unsigned long pfn;
-	struct page *pgdat_page = virt_to_page(pgdat);
 	int i;
 
 	for (pfn = start_pfn; pfn < end_pfn; pfn += PAGES_PER_SECTION) {
@@ -1805,10 +1965,6 @@ void try_offline_node(int nid)
 	 */
 	node_set_offline(nid);
 	unregister_one_node(nid);
-
-	if (!PageSlab(pgdat_page) && !PageCompound(pgdat_page))
-		/* node data is allocated from boot memory */
-		return;
 
 	/* free waittable in each zone */
 	for (i = 0; i < MAX_NR_ZONES; i++) {
@@ -1846,7 +2002,7 @@ void __ref remove_memory(int nid, u64 start, u64 size)
 
 	BUG_ON(check_hotplug_memory_range(start, size));
 
-	lock_memory_hotplug();
+	mem_hotplug_begin();
 
 	/*
 	 * All memory blocks must be offlined before removing memory.  Check
@@ -1854,11 +2010,9 @@ void __ref remove_memory(int nid, u64 start, u64 size)
 	 * if this is not the case.
 	 */
 	ret = walk_memory_range(PFN_DOWN(start), PFN_UP(start + size - 1), NULL,
-				is_memblock_offlined_cb);
-	if (ret) {
-		unlock_memory_hotplug();
+				check_memblock_offlined_cb);
+	if (ret)
 		BUG();
-	}
 
 	/* remove memmap entry */
 	firmware_map_remove(start, start + size, "System RAM");
@@ -1867,7 +2021,7 @@ void __ref remove_memory(int nid, u64 start, u64 size)
 
 	try_offline_node(nid);
 
-	unlock_memory_hotplug();
+	mem_hotplug_done();
 }
 EXPORT_SYMBOL_GPL(remove_memory);
 #endif /* CONFIG_MEMORY_HOTREMOVE */

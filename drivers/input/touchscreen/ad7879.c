@@ -22,7 +22,6 @@
  */
 
 #include <linux/device.h>
-#include <linux/init.h>
 #include <linux/delay.h>
 #include <linux/input.h>
 #include <linux/interrupt.h>
@@ -31,6 +30,7 @@
 #include <linux/spi/spi.h>
 #include <linux/i2c.h>
 #include <linux/gpio.h>
+#include <linux/of.h>
 
 #include <linux/spi/ad7879.h>
 #include <linux/module.h>
@@ -470,15 +470,11 @@ static int ad7879_gpio_add(struct ad7879 *ts,
 
 static void ad7879_gpio_remove(struct ad7879 *ts)
 {
-	const struct ad7879_platform_data *pdata = ts->dev->platform_data;
-	int ret;
+	const struct ad7879_platform_data *pdata = dev_get_platdata(ts->dev);
 
-	if (pdata->gpio_export) {
-		ret = gpiochip_remove(&ts->gc);
-		if (ret)
-			dev_err(ts->dev, "failed to remove gpio %d\n",
-				ts->gc.base);
-	}
+	if (pdata->gpio_export)
+		gpiochip_remove(&ts->gc);
+
 }
 #else
 static inline int ad7879_gpio_add(struct ad7879 *ts,
@@ -492,10 +488,63 @@ static inline void ad7879_gpio_remove(struct ad7879 *ts)
 }
 #endif
 
+#ifdef CONFIG_OF
+static struct ad7879_platform_data *ad7879_parse_dt(struct device *dev)
+{
+	struct device_node *np = dev->of_node;
+	struct ad7879_platform_data *pdata;
+	u8 tmp;
+
+	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
+	if (!pdata) {
+		dev_err(dev, "could not allocate memory for platform data\n");
+		return NULL;
+	}
+
+	pdata->swap_xy = of_property_read_bool(np, "adi,swap-xy-axis-enable");
+
+	of_property_read_u16(np, "adi,x-plate-ohms", &pdata->x_plate_ohms);
+	of_property_read_u16(np, "adi,x-min", &pdata->x_min);
+	of_property_read_u16(np, "adi,x-max", &pdata->x_max);
+	of_property_read_u16(np, "adi,y-min", &pdata->y_min);
+	of_property_read_u16(np, "adi,y.max", &pdata->y_max);
+	of_property_read_u16(np, "adi,pressure-min", &pdata->pressure_min);
+	of_property_read_u16(np, "adi,pressure-max", &pdata->pressure_max);
+
+	tmp = 254; /* 9ms */
+	of_property_read_u8(np, "adi,pen-down-acquisition-interval", &tmp);
+	pdata->pen_down_acc_interval = tmp;
+
+	tmp = 3; /* 512us */
+	of_property_read_u8(np, "adi,first-conversion-delay", &tmp);
+	pdata->first_conversion_delay = tmp;
+
+	tmp = 1; /* 4us */
+	of_property_read_u8(np, "adi,acquisition-time", &tmp);
+	pdata->acquisition_time = tmp;
+
+	tmp = 1; /* take the average of 4 middle samples */
+	of_property_read_u8(np, "adi,averaging", &tmp);
+	pdata->averaging = tmp;
+
+	tmp = 2; /* do 8 measurements */
+	of_property_read_u8(np, "adi,median", &tmp);
+	pdata->median = tmp;
+
+	return pdata;
+}
+#else
+static
+struct ad7879_platform_data *ad7879_parse_dt(struct device *dev)
+{
+	return NULL;
+}
+#endif
+
 struct ad7879 *ad7879_probe(struct device *dev, u8 devid, unsigned int irq,
 			    const struct ad7879_bus_ops *bops)
 {
-	struct ad7879_platform_data *pdata = dev->platform_data;
+	struct ad7879_platform_data *pdata;
 	struct ad7879 *ts;
 	struct input_dev *input_dev;
 	int err;
@@ -506,6 +555,11 @@ struct ad7879 *ad7879_probe(struct device *dev, u8 devid, unsigned int irq,
 		err = -EINVAL;
 		goto err_out;
 	}
+
+	if (dev->of_node)
+		pdata = ad7879_parse_dt(dev);
+	else
+		pdata = dev_get_platdata(dev);
 
 	if (!pdata) {
 		dev_err(dev, "no platform data?\n");

@@ -39,9 +39,13 @@ struct tty_buffer {
 	int size;
 	int commit;
 	int read;
+	int flags;
 	/* Data points here */
 	unsigned long data[0];
 };
+
+/* Values for .flags field of tty_buffer */
+#define TTYB_NORMAL	1	/* buffer has no flags buffer */
 
 static inline unsigned char *char_buf_ptr(struct tty_buffer *b, int ofs)
 {
@@ -60,7 +64,8 @@ struct tty_bufhead {
 	atomic_t	   priority;
 	struct tty_buffer sentinel;
 	struct llist_head free;		/* Free queue head */
-	atomic_t	   memory_used; /* In-use buffers excluding free list */
+	atomic_t	   mem_used;    /* In-use buffers excluding free list */
+	int		   mem_limit;
 	struct tty_buffer *tail;	/* Active buffer */
 };
 /*
@@ -137,6 +142,7 @@ struct tty_bufhead {
 #define C_CLOCAL(tty)	_C_FLAG((tty), CLOCAL)
 #define C_CIBAUD(tty)	_C_FLAG((tty), CIBAUD)
 #define C_CRTSCTS(tty)	_C_FLAG((tty), CRTSCTS)
+#define C_CMSPAR(tty)	_C_FLAG((tty), CMSPAR)
 
 #define L_ISIG(tty)	_L_FLAG((tty), ISIG)
 #define L_ICANON(tty)	_L_FLAG((tty), ICANON)
@@ -180,7 +186,6 @@ struct tty_port_operations {
 	   IFF the port was initialized. Do not use to free resources. Called
 	   under the port mutex to serialize against activate/shutdowns */
 	void (*shutdown)(struct tty_port *port);
-	void (*drop)(struct tty_port *port);
 	/* Called under the port mutex from tty_port_open, serialized using
 	   the port mutex */
         /* FIXME: long term getting the tty argument *out* of this would be
@@ -203,7 +208,7 @@ struct tty_port {
 	wait_queue_head_t	delta_msr_wait;	/* Modem status change */
 	unsigned long		flags;		/* TTY flags ASY_*/
 	unsigned char		console:1,	/* port is a console */
-				low_latency:1;	/* direct buffer flush */
+				low_latency:1;	/* optional: tune for latency */
 	struct mutex		mutex;		/* Locking */
 	struct mutex		buf_mutex;	/* Buffer alloc lock */
 	unsigned char		*xmit_buf;	/* Optional buffer */
@@ -247,6 +252,7 @@ struct tty_struct {
 	struct rw_semaphore termios_rwsem;
 	struct mutex winsize_mutex;
 	spinlock_t ctrl_lock;
+	spinlock_t flow_lock;
 	/* Termios values are protected by the termios rwsem */
 	struct ktermios termios, termios_locked;
 	struct termiox *termiox;	/* May be NULL for unsupported */
@@ -256,8 +262,13 @@ struct tty_struct {
 	unsigned long flags;
 	int count;
 	struct winsize winsize;		/* winsize_mutex */
-	unsigned char stopped:1, hw_stopped:1, flow_stopped:1, packet:1;
-	unsigned char ctrl_status;	/* ctrl_lock */
+	unsigned long stopped:1,	/* flow_lock */
+		      flow_stopped:1,
+		      unused:BITS_PER_LONG - 2;
+	int hw_stopped;
+	unsigned long ctrl_status:8,	/* ctrl_lock */
+		      packet:1,
+		      unused_ctrl:BITS_PER_LONG - 9;
 	unsigned int receive_room;	/* Bytes free for queue */
 	int flow_change;
 
@@ -392,7 +403,9 @@ extern int tty_paranoia_check(struct tty_struct *tty, struct inode *inode,
 extern char *tty_name(struct tty_struct *tty, char *buf);
 extern void tty_wait_until_sent(struct tty_struct *tty, long timeout);
 extern int tty_check_change(struct tty_struct *tty);
+extern void __stop_tty(struct tty_struct *tty);
 extern void stop_tty(struct tty_struct *tty);
+extern void __start_tty(struct tty_struct *tty);
 extern void start_tty(struct tty_struct *tty);
 extern int tty_register_driver(struct tty_driver *driver);
 extern int tty_unregister_driver(struct tty_driver *driver);
@@ -406,6 +419,7 @@ extern void tty_unregister_device(struct tty_driver *driver, unsigned index);
 extern int tty_read_raw_data(struct tty_struct *tty, unsigned char *bufp,
 			     int buflen);
 extern void tty_write_message(struct tty_struct *tty, char *msg);
+extern int tty_send_xchar(struct tty_struct *tty, char ch);
 extern int tty_put_char(struct tty_struct *tty, unsigned char c);
 extern int tty_chars_in_buffer(struct tty_struct *tty);
 extern int tty_write_room(struct tty_struct *tty);
@@ -423,7 +437,6 @@ extern int is_ignored(int sig);
 extern int tty_signal(int sig, struct tty_struct *tty);
 extern void tty_hangup(struct tty_struct *tty);
 extern void tty_vhangup(struct tty_struct *tty);
-extern void tty_vhangup_locked(struct tty_struct *tty);
 extern void tty_unhangup(struct file *filp);
 extern int tty_hung_up_p(struct file *filp);
 extern void do_SAK(struct tty_struct *tty);
@@ -473,13 +486,11 @@ extern int tty_mode_ioctl(struct tty_struct *tty, struct file *file,
 			unsigned int cmd, unsigned long arg);
 extern int tty_perform_flush(struct tty_struct *tty, unsigned long arg);
 extern void tty_default_fops(struct file_operations *fops);
-extern struct tty_struct *alloc_tty_struct(void);
+extern struct tty_struct *alloc_tty_struct(struct tty_driver *driver, int idx);
 extern int tty_alloc_file(struct file *file);
 extern void tty_add_file(struct tty_struct *tty, struct file *file);
 extern void tty_free_file(struct file *file);
 extern void free_tty_struct(struct tty_struct *tty);
-extern void initialize_tty_struct(struct tty_struct *tty,
-		struct tty_driver *driver, int idx);
 extern void deinitialize_tty_struct(struct tty_struct *tty);
 extern struct tty_struct *tty_init_dev(struct tty_driver *driver, int idx);
 extern int tty_release(struct inode *inode, struct file *filp);
@@ -493,8 +504,6 @@ extern struct tty_struct *tty_pair_get_pty(struct tty_struct *tty);
 extern struct mutex tty_mutex;
 extern spinlock_t tty_files_lock;
 
-extern void tty_write_unlock(struct tty_struct *tty);
-extern int tty_write_lock(struct tty_struct *tty, int ndelay);
 #define tty_is_writelocked(tty)  (mutex_is_locked(&tty->atomic_write_lock))
 
 extern void tty_port_init(struct tty_port *port);
@@ -514,9 +523,9 @@ extern void tty_port_put(struct tty_port *port);
 
 static inline struct tty_port *tty_port_get(struct tty_port *port)
 {
-	if (port)
-		kref_get(&port->kref);
-	return port;
+	if (port && kref_get_unless_zero(&port->kref))
+		return port;
+	return NULL;
 }
 
 /* If the cts flow control is enabled, return true. */
@@ -672,31 +681,17 @@ static inline void tty_wait_until_sent_from_close(struct tty_struct *tty,
 #define wait_event_interruptible_tty(tty, wq, condition)		\
 ({									\
 	int __ret = 0;							\
-	if (!(condition)) {						\
-		__wait_event_interruptible_tty(tty, wq, condition, __ret);	\
-	}								\
+	if (!(condition))						\
+		__ret = __wait_event_interruptible_tty(tty, wq,		\
+						       condition);	\
 	__ret;								\
 })
 
-#define __wait_event_interruptible_tty(tty, wq, condition, ret)		\
-do {									\
-	DEFINE_WAIT(__wait);						\
-									\
-	for (;;) {							\
-		prepare_to_wait(&wq, &__wait, TASK_INTERRUPTIBLE);	\
-		if (condition)						\
-			break;						\
-		if (!signal_pending(current)) {				\
-			tty_unlock(tty);					\
+#define __wait_event_interruptible_tty(tty, wq, condition)		\
+	___wait_event(wq, condition, TASK_INTERRUPTIBLE, 0, 0,		\
+			tty_unlock(tty);				\
 			schedule();					\
-			tty_lock(tty);					\
-			continue;					\
-		}							\
-		ret = -ERESTARTSYS;					\
-		break;							\
-	}								\
-	finish_wait(&wq, &__wait);					\
-} while (0)
+			tty_lock(tty))
 
 #ifdef CONFIG_PROC_FS
 extern void proc_tty_register_driver(struct tty_driver *);

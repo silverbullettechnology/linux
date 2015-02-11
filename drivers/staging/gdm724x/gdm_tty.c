@@ -15,7 +15,6 @@
 
 #include <linux/kernel.h>
 #include <linux/errno.h>
-#include <linux/init.h>
 #include <linux/tty.h>
 #include <linux/tty_driver.h>
 #include <linux/tty_flip.h>
@@ -112,24 +111,28 @@ static int gdm_tty_install(struct tty_driver *driver, struct tty_struct *tty)
 static int gdm_tty_open(struct tty_struct *tty, struct file *filp)
 {
 	struct gdm *gdm = tty->driver_data;
+
 	return tty_port_open(&gdm->port, tty, filp);
 }
 
 static void gdm_tty_cleanup(struct tty_struct *tty)
 {
 	struct gdm *gdm = tty->driver_data;
+
 	tty_port_put(&gdm->port);
 }
 
 static void gdm_tty_hangup(struct tty_struct *tty)
 {
 	struct gdm *gdm = tty->driver_data;
+
 	tty_port_hangup(&gdm->port);
 }
 
 static void gdm_tty_close(struct tty_struct *tty, struct file *filp)
 {
 	struct gdm *gdm = tty->driver_data;
+
 	tty_port_close(&gdm->port, tty, filp);
 }
 
@@ -140,6 +143,7 @@ static int gdm_tty_recv_complete(void *data,
 				 int complete)
 {
 	struct gdm *gdm = tty_dev->gdm[index];
+
 	if (!GDM_TTY_READY(gdm)) {
 		if (complete == RECV_PACKET_PROCESS_COMPLETE)
 			gdm_tty_recv(gdm, gdm_tty_recv_complete);
@@ -171,7 +175,8 @@ static void gdm_tty_send_complete(void *arg)
 	tty_port_tty_wakeup(&gdm->port);
 }
 
-static int gdm_tty_write(struct tty_struct *tty, const unsigned char *buf, int len)
+static int gdm_tty_write(struct tty_struct *tty, const unsigned char *buf,
+			 int len)
 {
 	struct gdm *gdm = tty->driver_data;
 	int remain = len;
@@ -185,7 +190,8 @@ static int gdm_tty_write(struct tty_struct *tty, const unsigned char *buf, int l
 		return 0;
 
 	while (1) {
-		sending_len = remain > MUX_TX_MAX_SIZE ? MUX_TX_MAX_SIZE : remain;
+		sending_len = remain > MUX_TX_MAX_SIZE ? MUX_TX_MAX_SIZE :
+							 remain;
 		gdm_tty_send(gdm,
 			     (void *)(buf+sent_len),
 			     sending_len,
@@ -247,7 +253,8 @@ int register_lte_tty_device(struct tty_dev *tty_dev, struct device *device)
 		gdm->minor = j;
 		gdm->tty_dev = tty_dev;
 
-		tty_port_register_device(&gdm->port, gdm_driver[i], gdm->minor, device);
+		tty_port_register_device(&gdm->port, gdm_driver[i],
+					 gdm->minor, device);
 	}
 
 	for (i = 0; i < MAX_ISSUE_NUM; i++)
@@ -309,7 +316,8 @@ int register_lte_tty_driver(void)
 		tty_driver->major = GDM_TTY_MAJOR;
 		tty_driver->type = TTY_DRIVER_TYPE_SERIAL;
 		tty_driver->subtype = SERIAL_TYPE_NORMAL;
-		tty_driver->flags = TTY_DRIVER_REAL_RAW | TTY_DRIVER_DYNAMIC_DEV;
+		tty_driver->flags = TTY_DRIVER_REAL_RAW |
+					TTY_DRIVER_DYNAMIC_DEV;
 		tty_driver->init_termios = tty_std_termios;
 		tty_driver->init_termios.c_cflag = B9600 | CS8 | HUPCL | CLOCAL;
 		tty_driver->init_termios.c_lflag = ISIG | ICANON | IEXTEN;

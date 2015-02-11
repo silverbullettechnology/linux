@@ -685,7 +685,8 @@ static int palmas_pinctrl_get_func_groups(struct pinctrl_dev *pctldev,
 	return 0;
 }
 
-static int palmas_pinctrl_enable(struct pinctrl_dev *pctldev, unsigned function,
+static int palmas_pinctrl_set_mux(struct pinctrl_dev *pctldev,
+		unsigned function,
 		unsigned group)
 {
 	struct palmas_pctrl_chip_info *pci = pinctrl_dev_get_drvdata(pctldev);
@@ -742,7 +743,7 @@ static const struct pinmux_ops palmas_pinmux_ops = {
 	.get_functions_count = palmas_pinctrl_get_funcs_count,
 	.get_function_name = palmas_pinctrl_get_func_name,
 	.get_function_groups = palmas_pinctrl_get_func_groups,
-	.enable = palmas_pinctrl_enable,
+	.set_mux = palmas_pinctrl_set_mux,
 };
 
 static int palmas_pinconf_get(struct pinctrl_dev *pctldev,
@@ -891,9 +892,6 @@ static int palmas_pinconf_set(struct pinctrl_dev *pctldev,
 		param = pinconf_to_config_param(configs[i]);
 		param_val = pinconf_to_config_argument(configs[i]);
 
-		if (param == PIN_CONFIG_BIAS_PULL_PIN_DEFAULT)
-			continue;
-
 		switch (param) {
 		case PIN_CONFIG_BIAS_DISABLE:
 		case PIN_CONFIG_BIAS_PULL_UP:
@@ -962,26 +960,9 @@ static int palmas_pinconf_set(struct pinctrl_dev *pctldev,
 	return 0;
 }
 
-static int palmas_pinconf_group_get(struct pinctrl_dev *pctldev,
-				unsigned group, unsigned long *config)
-{
-	dev_err(pctldev->dev, "palmas_pinconf_group_get op not supported\n");
-	return -ENOTSUPP;
-}
-
-static int palmas_pinconf_group_set(struct pinctrl_dev *pctldev,
-				unsigned group, unsigned long *configs,
-				unsigned num_configs)
-{
-	dev_err(pctldev->dev, "palmas_pinconf_group_set op not supported\n");
-	return -ENOTSUPP;
-}
-
 static const struct pinconf_ops palmas_pinconf_ops = {
 	.pin_config_get = palmas_pinconf_get,
 	.pin_config_set = palmas_pinconf_set,
-	.pin_config_group_get = palmas_pinconf_group_get,
-	.pin_config_group_set = palmas_pinconf_group_set,
 };
 
 static struct pinctrl_desc palmas_pinctrl_desc = {

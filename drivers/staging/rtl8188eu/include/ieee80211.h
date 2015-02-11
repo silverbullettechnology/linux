@@ -306,8 +306,8 @@ struct ieee_ibss_seq {
 };
 
 struct rtw_ieee80211_hdr {
-	u16 frame_ctl;
-	u16 duration_id;
+	__le16 frame_ctl;
+	__le16 duration_id;
 	u8 addr1[ETH_ALEN];
 	u8 addr2[ETH_ALEN];
 	u8 addr3[ETH_ALEN];
@@ -316,8 +316,8 @@ struct rtw_ieee80211_hdr {
 } __packed;
 
 struct rtw_ieee80211_hdr_3addr {
-	u16 frame_ctl;
-	u16 duration_id;
+	__le16 frame_ctl;
+	__le16 duration_id;
 	u8 addr1[ETH_ALEN];
 	u8 addr2[ETH_ALEN];
 	u8 addr3[ETH_ALEN];
@@ -325,8 +325,8 @@ struct rtw_ieee80211_hdr_3addr {
 } __packed;
 
 struct rtw_ieee80211_hdr_qos {
-	u16 frame_ctl;
-	u16 duration_id;
+	__le16 frame_ctl;
+	__le16 duration_id;
 	u8 addr1[ETH_ALEN];
 	u8 addr2[ETH_ALEN];
 	u8 addr3[ETH_ALEN];
@@ -336,8 +336,8 @@ struct rtw_ieee80211_hdr_qos {
 }  __packed;
 
 struct rtw_ieee80211_hdr_3addr_qos {
-	u16 frame_ctl;
-	u16 duration_id;
+	__le16 frame_ctl;
+	__le16 duration_id;
 	u8 addr1[ETH_ALEN];
 	u8 addr2[ETH_ALEN];
 	u8 addr3[ETH_ALEN];
@@ -1232,19 +1232,6 @@ u8 *rtw_get_wps_attr_content(u8 *wps_ie, uint wps_ielen, u16 target_attr_id,
 
 void dump_ies(u8 *buf, u32 buf_len);
 void dump_wps_ie(u8 *ie, u32 ie_len);
-
-#ifdef CONFIG_88EU_P2P
-void dump_p2p_ie(u8 *ie, u32 ie_len);
-u8 *rtw_get_p2p_ie(u8 *in_ie, int in_len, u8 *p2p_ie, uint *p2p_ielen);
-u8 *rtw_get_p2p_attr(u8 *p2p_ie, uint p2p_ielen, u8 target_attr_id,
-		     u8 *buf_attr, u32 *len_attr);
-u8 *rtw_get_p2p_attr_content(u8 *p2p_ie, uint p2p_ielen, u8 target_attr_id,
-			     u8 *buf_content, uint *len_content);
-u32 rtw_set_p2p_attr_content(u8 *pbuf, u8 attr_id, u16 attr_len,
-			     u8 *pdata_attr);
-void rtw_wlan_bssid_ex_remove_p2p_attr(struct wlan_bssid_ex *bss_ex,
-				       u8 attr_id);
-#endif
 
 uint	rtw_get_rateset_len(u8	*rateset);
 

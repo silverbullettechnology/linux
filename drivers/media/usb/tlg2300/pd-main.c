@@ -232,7 +232,7 @@ static int firmware_download(struct usb_device *udev)
 		goto out;
 	}
 
-	max_packet_size = udev->ep_out[0x1]->desc.wMaxPacketSize;
+	max_packet_size = le16_to_cpu(udev->ep_out[0x1]->desc.wMaxPacketSize);
 	log("\t\t download size : %d", (int)max_packet_size);
 
 	for (offset = 0; offset < fwlength; offset += max_packet_size) {
@@ -476,6 +476,8 @@ err_audio:
 err_video:
 	v4l2_device_unregister(&pd->v4l2_dev);
 err_v4l2:
+	usb_put_intf(pd->interface);
+	usb_put_dev(pd->udev);
 	kfree(pd);
 	return ret;
 }

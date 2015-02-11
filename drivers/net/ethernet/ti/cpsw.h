@@ -15,6 +15,7 @@
 #define __CPSW_H__
 
 #include <linux/if_ether.h>
+#include <linux/phy.h>
 
 struct cpsw_slave_data {
 	char		phy_id[MII_BUS_ID_SIZE];
@@ -38,5 +39,7 @@ struct cpsw_platform_data {
 	u16	default_vlan;	/* Def VLAN for ALE lookup in VLAN aware mode*/
 	bool	dual_emac;	/* Enable Dual EMAC mode */
 };
+
+void cpsw_phy_sel(struct device *dev, phy_interface_t phy_mode, int slave);
 
 #endif /* __CPSW_H__ */

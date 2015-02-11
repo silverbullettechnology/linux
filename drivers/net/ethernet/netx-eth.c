@@ -13,8 +13,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/init.h>
@@ -315,8 +314,6 @@ static int netx_eth_enable(struct net_device *ndev)
 	struct netx_eth_priv *priv = netdev_priv(ndev);
 	unsigned int mac4321, mac65;
 	int running, i;
-
-	ether_setup(ndev);
 
 	ndev->netdev_ops = &netx_eth_netdev_ops;
 	ndev->watchdog_timeo = msecs_to_jiffies(5000);

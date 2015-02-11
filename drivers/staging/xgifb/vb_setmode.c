@@ -49,6 +49,7 @@ void InitTo330Pointer(unsigned char ChipType, struct vb_device_info *pVBInfo)
 
 	if (ChipType == XG27) {
 		unsigned char temp;
+
 		pVBInfo->MCLKData = XGI27New_MCLKData;
 		pVBInfo->CR40 = XGI27_cr41;
 		pVBInfo->XGINew_CR97 = 0xc1;
@@ -845,11 +846,10 @@ static unsigned short XGI_GetVCLK2Ptr(unsigned short ModeIdIndex,
 			VCLKIndex = TVCLKBASE_315_25 + HiTVVCLK;
 
 		if (pVBInfo->SetFlag & TVSimuMode) {
-			if (modeflag & Charx8Dot) {
+			if (modeflag & Charx8Dot)
 				VCLKIndex = TVCLKBASE_315_25 + HiTVSimuVCLK;
-			} else {
+			else
 				VCLKIndex = TVCLKBASE_315_25 + HiTVTextVCLK;
-			}
 		}
 
 		/* 301lv */
@@ -3895,8 +3895,7 @@ static struct XGI301C_Tap4TimingStruct const
 
 	if (tempax <= tempbx)
 		return &xgifb_tap4_timing[0];
-	else
-		Tap4TimingPtr = xgifb_ntsc_525_tap4_timing; /* NTSC */
+	Tap4TimingPtr = xgifb_ntsc_525_tap4_timing; /* NTSC */
 
 	if (pVBInfo->TVInfo & TVSetPAL)
 		Tap4TimingPtr = PALTap4Timing;
@@ -5223,6 +5222,7 @@ void XGI_SenseCRT1(struct vb_device_info *pVBInfo)
 	unsigned short temp;
 
 	int i;
+
 	xgifb_reg_set(pVBInfo->P3c4, 0x05, 0x86);
 
 	/* to fix XG42 single LCD sense to CRT+LCD */
@@ -5274,9 +5274,8 @@ void XGI_SenseCRT1(struct vb_device_info *pVBInfo)
 
 	outb(0x00, pVBInfo->P3c8);
 
-	for (i = 0; i < 256 * 3; i++) {
+	for (i = 0; i < 256 * 3; i++)
 		outb(0x0F, (pVBInfo->P3c8 + 1)); /* DAC_TEST_PARMS */
-	}
 
 	mdelay(1);
 
@@ -5291,9 +5290,8 @@ void XGI_SenseCRT1(struct vb_device_info *pVBInfo)
 	/* avoid display something, set BLACK DAC if not restore DAC */
 	outb(0x00, pVBInfo->P3c8);
 
-	for (i = 0; i < 256 * 3; i++) {
+	for (i = 0; i < 256 * 3; i++)
 		outb(0, (pVBInfo->P3c8 + 1));
-	}
 
 	xgifb_reg_set(pVBInfo->P3c4, 0x01, SR01);
 	xgifb_reg_set(pVBInfo->P3d4, 0x63, CR63);
@@ -5463,6 +5461,7 @@ unsigned char XGISetModeNew(struct xgifb_video_info *xgifb_info,
 	unsigned short ModeIdIndex;
 	struct vb_device_info VBINF;
 	struct vb_device_info *pVBInfo = &VBINF;
+
 	pVBInfo->IF_DEF_LVDS = 0;
 
 	if (HwDeviceExtension->jChipType >= XG20)

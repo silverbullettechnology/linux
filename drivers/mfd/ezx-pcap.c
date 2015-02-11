@@ -62,7 +62,7 @@ static int ezx_pcap_putget(struct pcap_chip *pcap, u32 *data)
 	struct spi_message m;
 	int status;
 
-	memset(&t, 0, sizeof t);
+	memset(&t, 0, sizeof(t));
 	spi_message_init(&m);
 	t.len = sizeof(u32);
 	spi_message_add_tail(&t, &m);
@@ -211,7 +211,6 @@ static void pcap_irq_handler(unsigned int irq, struct irq_desc *desc)
 
 	desc->irq_data.chip->irq_ack(&desc->irq_data);
 	queue_work(pcap->workqueue, &pcap->isr_work);
-	return;
 }
 
 /* ADC */
@@ -394,16 +393,12 @@ static int pcap_add_subdev(struct pcap_chip *pcap,
 static int ezx_pcap_remove(struct spi_device *spi)
 {
 	struct pcap_chip *pcap = spi_get_drvdata(spi);
-	struct pcap_platform_data *pdata = dev_get_platdata(&spi->dev);
-	int i, adc_irq;
+	int i;
 
 	/* remove all registered subdevs */
 	device_for_each_child(&spi->dev, NULL, pcap_remove_subdev);
 
 	/* cleanup ADC */
-	adc_irq = pcap_to_irq(pcap, (pdata->config & PCAP_SECOND_PORT) ?
-				PCAP_IRQ_ADCDONE2 : PCAP_IRQ_ADCDONE);
-	devm_free_irq(&spi->dev, adc_irq, pcap);
 	mutex_lock(&pcap->adc_mutex);
 	for (i = 0; i < PCAP_ADC_MAXQ; i++)
 		kfree(pcap->adc_queue[i]);
@@ -509,8 +504,6 @@ static int ezx_pcap_probe(struct spi_device *spi)
 
 remove_subdevs:
 	device_for_each_child(&spi->dev, NULL, pcap_remove_subdev);
-/* free_adc: */
-	devm_free_irq(&spi->dev, adc_irq, pcap);
 free_irqchip:
 	for (i = pcap->irq_base; i < (pcap->irq_base + PCAP_NIRQS); i++)
 		irq_set_chip_and_handler(i, NULL, NULL);

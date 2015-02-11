@@ -66,12 +66,9 @@ static ssize_t audmux_read_file(struct file *file, char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
 	ssize_t ret;
-	char *buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
-	int port = (int)file->private_data;
+	char *buf;
+	uintptr_t port = (uintptr_t)file->private_data;
 	u32 pdcr, ptcr;
-
-	if (!buf)
-		return -ENOMEM;
 
 	if (audmux_clk) {
 		ret = clk_prepare_enable(audmux_clk);
@@ -84,6 +81,10 @@ static ssize_t audmux_read_file(struct file *file, char __user *user_buf,
 
 	if (audmux_clk)
 		clk_disable_unprepare(audmux_clk);
+
+	buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
 
 	ret = snprintf(buf, PAGE_SIZE, "PDCR: %08x\nPTCR: %08x\n",
 		       pdcr, ptcr);
@@ -144,9 +145,9 @@ static const struct file_operations audmux_debugfs_fops = {
 	.llseek = default_llseek,
 };
 
-static void __init audmux_debugfs_init(void)
+static void audmux_debugfs_init(void)
 {
-	int i;
+	uintptr_t i;
 	char buf[20];
 
 	audmux_debugfs_root = debugfs_create_dir("audmux", NULL);
@@ -156,10 +157,10 @@ static void __init audmux_debugfs_init(void)
 	}
 
 	for (i = 0; i < MX31_AUDMUX_PORT7_SSI_PINS_7 + 1; i++) {
-		snprintf(buf, sizeof(buf), "ssi%d", i);
+		snprintf(buf, sizeof(buf), "ssi%lu", i);
 		if (!debugfs_create_file(buf, 0444, audmux_debugfs_root,
 					 (void *)i, &audmux_debugfs_fops))
-			pr_warning("Failed to create AUDMUX port %d debugfs file\n",
+			pr_warning("Failed to create AUDMUX port %lu debugfs file\n",
 				   i);
 	}
 }

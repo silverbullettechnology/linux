@@ -70,11 +70,6 @@ static int lv5207lp_backlight_update_status(struct backlight_device *backlight)
 	return 0;
 }
 
-static int lv5207lp_backlight_get_brightness(struct backlight_device *backlight)
-{
-	return backlight->props.brightness;
-}
-
 static int lv5207lp_backlight_check_fb(struct backlight_device *backlight,
 				       struct fb_info *info)
 {
@@ -86,14 +81,13 @@ static int lv5207lp_backlight_check_fb(struct backlight_device *backlight,
 static const struct backlight_ops lv5207lp_backlight_ops = {
 	.options	= BL_CORE_SUSPENDRESUME,
 	.update_status	= lv5207lp_backlight_update_status,
-	.get_brightness	= lv5207lp_backlight_get_brightness,
 	.check_fb	= lv5207lp_backlight_check_fb,
 };
 
 static int lv5207lp_probe(struct i2c_client *client,
 			  const struct i2c_device_id *id)
 {
-	struct lv5207lp_platform_data *pdata = client->dev.platform_data;
+	struct lv5207lp_platform_data *pdata = dev_get_platdata(&client->dev);
 	struct backlight_device *backlight;
 	struct backlight_properties props;
 	struct lv5207lp *lv;
@@ -124,9 +118,9 @@ static int lv5207lp_probe(struct i2c_client *client,
 	props.brightness = clamp_t(unsigned int, pdata->def_value, 0,
 				   props.max_brightness);
 
-	backlight = backlight_device_register(dev_name(&client->dev),
-					      &lv->client->dev, lv,
-					      &lv5207lp_backlight_ops, &props);
+	backlight = devm_backlight_device_register(&client->dev,
+				dev_name(&client->dev), &lv->client->dev,
+				lv, &lv5207lp_backlight_ops, &props);
 	if (IS_ERR(backlight)) {
 		dev_err(&client->dev, "failed to register backlight\n");
 		return PTR_ERR(backlight);
@@ -144,7 +138,6 @@ static int lv5207lp_remove(struct i2c_client *client)
 
 	backlight->props.brightness = 0;
 	backlight_update_status(backlight);
-	backlight_device_unregister(backlight);
 
 	return 0;
 }

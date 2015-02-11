@@ -16,6 +16,7 @@
 #include <linux/irqreturn.h>
 #include <linux/iio/trigger.h>
 #include <linux/bitops.h>
+#include <linux/regulator/consumer.h>
 
 #include <linux/platform_data/st_sensors_pdata.h>
 
@@ -46,6 +47,7 @@
 	.type = device_type, \
 	.modified = mod, \
 	.info_mask_separate = mask, \
+	.info_mask_shared_by_all = BIT(IIO_CHAN_INFO_SAMP_FREQ), \
 	.scan_index = index, \
 	.channel2 = ch2, \
 	.address = addr, \
@@ -57,11 +59,6 @@
 		.endianness = endian, \
 	}, \
 }
-
-#define ST_SENSOR_DEV_ATTR_SAMP_FREQ() \
-		IIO_DEV_ATTR_SAMP_FREQ(S_IWUSR | S_IRUGO, \
-			st_sensors_sysfs_get_sampling_frequency, \
-			st_sensors_sysfs_set_sampling_frequency)
 
 #define ST_SENSORS_DEV_ATTR_SAMP_FREQ_AVAIL() \
 		IIO_DEV_ATTR_SAMP_FREQ_AVAIL( \
@@ -184,6 +181,7 @@ struct st_sensors {
 	u8 wai;
 	char sensors_supported[ST_SENSORS_MAX_4WAI][ST_SENSORS_MAX_NAME];
 	struct iio_chan_spec *ch;
+	int num_ch;
 	struct st_sensor_odr odr;
 	struct st_sensor_power pw;
 	struct st_sensor_axis enable_axis;
@@ -200,6 +198,8 @@ struct st_sensors {
  * @trig: The trigger in use by the core driver.
  * @sensor: Pointer to the current sensor struct in use.
  * @current_fullscale: Maximum range of measure by the sensor.
+ * @vdd: Pointer to sensor's Vdd power supply
+ * @vdd_io: Pointer to sensor's Vdd-IO power supply
  * @enabled: Status of the sensor (false->off, true->on).
  * @multiread_bit: Use or not particular bit for [I2C/SPI] multiread.
  * @buffer_data: Data used by buffer part.
@@ -215,6 +215,8 @@ struct st_sensor_data {
 	struct iio_trigger *trig;
 	struct st_sensors *sensor;
 	struct st_sensor_fullscale_avl *current_fullscale;
+	struct regulator *vdd;
+	struct regulator *vdd_io;
 
 	bool enabled;
 	bool multiread_bit;
@@ -263,6 +265,10 @@ int st_sensors_set_enable(struct iio_dev *indio_dev, bool enable);
 
 int st_sensors_set_axis_enable(struct iio_dev *indio_dev, u8 axis_enable);
 
+void st_sensors_power_enable(struct iio_dev *indio_dev);
+
+void st_sensors_power_disable(struct iio_dev *indio_dev);
+
 int st_sensors_set_odr(struct iio_dev *indio_dev, unsigned int odr);
 
 int st_sensors_set_dataready_irq(struct iio_dev *indio_dev, bool enable);
@@ -274,12 +280,6 @@ int st_sensors_read_info_raw(struct iio_dev *indio_dev,
 
 int st_sensors_check_device_support(struct iio_dev *indio_dev,
 			int num_sensors_list, const struct st_sensors *sensors);
-
-ssize_t st_sensors_sysfs_get_sampling_frequency(struct device *dev,
-				struct device_attribute *attr, char *buf);
-
-ssize_t st_sensors_sysfs_set_sampling_frequency(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t size);
 
 ssize_t st_sensors_sysfs_sampling_frequency_avail(struct device *dev,
 				struct device_attribute *attr, char *buf);

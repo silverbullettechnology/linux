@@ -1,6 +1,6 @@
 /dts-v1/;
 
-/include/ "dove.dtsi"
+#include "dove.dtsi"
 
 / {
 	model = "SolidRun CuBox";
@@ -23,7 +23,7 @@
 		power {
 			label = "Power";
 			gpios = <&gpio0 18 1>;
-			linux,default-trigger = "default-on";
+			default-state = "keep";
 		};
 	};
 
@@ -99,27 +99,18 @@
 			silabs,pll-master;
 		};
 
-		clkout1 {
-			reg = <1>;
+		clkout2 {
+			reg = <2>;
 			silabs,drive-strength = <8>;
 			silabs,multisynth-source = <1>;
 			silabs,clock-source = <0>;
 			silabs,pll-master;
-		};
-
-		clkout2 {
-			reg = <2>;
-			silabs,multisynth-source = <1>;
-			silabs,clock-source = <0>;
 		};
 	};
 };
 
 &sdio0 {
 	status = "okay";
-	/* sdio0 card detect is connected to wrong pin on CuBox */
-	cd-gpios = <&gpio0 12 1>;
-	pinctrl-0 = <&pmx_sdio0 &pmx_gpio_12>;
 };
 
 &spi0 {
@@ -131,4 +122,12 @@
 		spi-max-frequency = <20000000>;
 		reg = <0>;
 	};
+};
+
+&audio1 {
+	status = "okay";
+	clocks = <&gate_clk 13>, <&si5351 2>;
+	clock-names = "internal", "extclk";
+	pinctrl-0 = <&pmx_audio1_i2s1_spdifo &pmx_audio1_extclk>;
+	pinctrl-names = "default";
 };

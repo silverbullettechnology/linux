@@ -50,16 +50,10 @@ static int apci2200_do_insn_bits(struct comedi_device *dev,
 				 struct comedi_insn *insn,
 				 unsigned int *data)
 {
-	unsigned int mask = data[0];
-	unsigned int bits = data[1];
-
 	s->state = inw(dev->iobase + APCI2200_DO_REG);
-	if (mask) {
-		s->state &= ~mask;
-		s->state |= (bits & mask);
 
+	if (comedi_dio_update_state(s, data))
 		outw(s->state, dev->iobase + APCI2200_DO_REG);
-	}
 
 	data[1] = s->state;
 
@@ -124,7 +118,7 @@ static void apci2200_detach(struct comedi_device *dev)
 {
 	if (dev->iobase)
 		apci2200_reset(dev);
-	comedi_pci_disable(dev);
+	comedi_pci_detach(dev);
 }
 
 static struct comedi_driver apci2200_driver = {
@@ -140,7 +134,7 @@ static int apci2200_pci_probe(struct pci_dev *dev,
 	return comedi_pci_auto_config(dev, &apci2200_driver, id->driver_data);
 }
 
-static DEFINE_PCI_DEVICE_TABLE(apci2200_pci_table) = {
+static const struct pci_device_id apci2200_pci_table[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_ADDIDATA, 0x1005) },
 	{ 0 }
 };

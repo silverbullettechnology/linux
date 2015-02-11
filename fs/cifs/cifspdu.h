@@ -428,7 +428,7 @@ struct smb_hdr {
 	__u16 Tid;
 	__le16 Pid;
 	__u16 Uid;
-	__u16 Mid;
+	__le16 Mid;
 	__u8 WordCount;
 } __attribute__((packed));
 
@@ -697,7 +697,13 @@ struct ntlmssp2_name {
 } __attribute__((packed));
 
 struct ntlmv2_resp {
-	char ntlmv2_hash[CIFS_ENCPWD_SIZE];
+	union {
+	    char ntlmv2_hash[CIFS_ENCPWD_SIZE];
+	    struct {
+		__u8 reserved[8];
+		__u8 key[CIFS_SERVER_CHALLENGE_SIZE];
+	    } __attribute__((packed)) challenge;
+	} __attribute__((packed));
 	__le32 blob_signature;
 	__u32  reserved;
 	__le64  time;
@@ -1351,6 +1357,35 @@ typedef struct smb_com_transaction_ioctl_req {
 	__u8 Pad[3];
 	__u8 Data[1];
 } __attribute__((packed)) TRANSACT_IOCTL_REQ;
+
+typedef struct smb_com_transaction_compr_ioctl_req {
+	struct smb_hdr hdr;	/* wct = 23 */
+	__u8 MaxSetupCount;
+	__u16 Reserved;
+	__le32 TotalParameterCount;
+	__le32 TotalDataCount;
+	__le32 MaxParameterCount;
+	__le32 MaxDataCount;
+	__le32 ParameterCount;
+	__le32 ParameterOffset;
+	__le32 DataCount;
+	__le32 DataOffset;
+	__u8 SetupCount; /* four setup words follow subcommand */
+	/* SNIA spec incorrectly included spurious pad here */
+	__le16 SubCommand; /* 2 = IOCTL/FSCTL */
+	__le32 FunctionCode;
+	__u16 Fid;
+	__u8 IsFsctl;  /* 1 = File System Control 0 = device control (IOCTL) */
+	__u8 IsRootFlag; /* 1 = apply command to root of share (must be DFS) */
+	__le16 ByteCount;
+	__u8 Pad[3];
+	__le16 compression_state;  /* See below for valid flags */
+} __attribute__((packed)) TRANSACT_COMPR_IOCTL_REQ;
+
+/* compression state flags */
+#define COMPRESSION_FORMAT_NONE		0x0000
+#define COMPRESSION_FORMAT_DEFAULT	0x0001
+#define COMPRESSION_FORMAT_LZNT1	0x0002
 
 typedef struct smb_com_transaction_ioctl_rsp {
 	struct smb_hdr hdr;	/* wct = 19 */
@@ -2215,6 +2250,32 @@ typedef struct {
 	__le32 DeviceCharacteristics;
 } __attribute__((packed)) FILE_SYSTEM_DEVICE_INFO; /* device info level 0x104 */
 
+/* minimum includes first three fields, and empty FS Name */
+#define MIN_FS_ATTR_INFO_SIZE 12
+
+
+/* List of FileSystemAttributes - see 2.5.1 of MS-FSCC */
+#define FILE_SUPPORT_INTEGRITY_STREAMS	0x04000000
+#define FILE_SUPPORTS_USN_JOURNAL	0x02000000
+#define FILE_SUPPORTS_OPEN_BY_FILE_ID	0x01000000
+#define FILE_SUPPORTS_EXTENDED_ATTRIBUTES 0x00800000
+#define FILE_SUPPORTS_HARD_LINKS	0x00400000
+#define FILE_SUPPORTS_TRANSACTIONS	0x00200000
+#define FILE_SEQUENTIAL_WRITE_ONCE	0x00100000
+#define FILE_READ_ONLY_VOLUME		0x00080000
+#define FILE_NAMED_STREAMS		0x00040000
+#define FILE_SUPPORTS_ENCRYPTION	0x00020000
+#define FILE_SUPPORTS_OBJECT_IDS	0x00010000
+#define FILE_VOLUME_IS_COMPRESSED	0x00008000
+#define FILE_SUPPORTS_REMOTE_STORAGE	0x00000100
+#define FILE_SUPPORTS_REPARSE_POINTS	0x00000080
+#define FILE_SUPPORTS_SPARSE_FILES	0x00000040
+#define FILE_VOLUME_QUOTAS		0x00000020
+#define FILE_FILE_COMPRESSION		0x00000010
+#define FILE_PERSISTENT_ACLS		0x00000008
+#define FILE_UNICODE_ON_DISK		0x00000004
+#define FILE_CASE_PRESERVED_NAMES	0x00000002
+#define FILE_CASE_SENSITIVE_SEARCH	0x00000001
 typedef struct {
 	__le32 Attributes;
 	__le32 MaxPathNameComponentLength;

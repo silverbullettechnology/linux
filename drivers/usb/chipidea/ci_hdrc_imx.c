@@ -23,6 +23,26 @@
 #include "ci.h"
 #include "ci_hdrc_imx.h"
 
+#define CI_HDRC_IMX_IMX28_WRITE_FIX BIT(0)
+
+struct ci_hdrc_imx_platform_flag {
+	unsigned int flags;
+};
+
+static const struct ci_hdrc_imx_platform_flag imx27_usb_data = {
+};
+
+static const struct ci_hdrc_imx_platform_flag imx28_usb_data = {
+	.flags = CI_HDRC_IMX_IMX28_WRITE_FIX,
+};
+
+static const struct of_device_id ci_hdrc_imx_dt_ids[] = {
+	{ .compatible = "fsl,imx28-usb", .data = &imx28_usb_data},
+	{ .compatible = "fsl,imx27-usb", .data = &imx27_usb_data},
+	{ /* sentinel */ }
+};
+MODULE_DEVICE_TABLE(of, ci_hdrc_imx_dt_ids);
+
 struct ci_hdrc_imx_data {
 	struct usb_phy *phy;
 	struct platform_device *ci_pdev;
@@ -34,6 +54,7 @@ struct ci_hdrc_imx_data {
 
 static struct imx_usbmisc_data *usbmisc_get_init_data(struct device *dev)
 {
+	struct platform_device *misc_pdev;
 	struct device_node *np = dev->of_node;
 	struct of_phandle_args args;
 	struct imx_usbmisc_data *data;
@@ -59,7 +80,14 @@ static struct imx_usbmisc_data *usbmisc_get_init_data(struct device *dev)
 	}
 
 	data->index = args.args[0];
+
+	misc_pdev = of_find_device_by_node(args.np);
 	of_node_put(args.np);
+
+	if (!misc_pdev)
+		return ERR_PTR(-EPROBE_DEFER);
+
+	data->dev = &misc_pdev->dev;
 
 	if (of_find_property(np, "disable-over-current", NULL))
 		data->disable_oc = 1;
@@ -76,12 +104,15 @@ static int ci_hdrc_imx_probe(struct platform_device *pdev)
 {
 	struct ci_hdrc_imx_data *data;
 	struct ci_hdrc_platform_data pdata = {
-		.name		= "ci_hdrc_imx",
+		.name		= dev_name(&pdev->dev),
 		.capoffset	= DEF_CAPOFFSET,
 		.flags		= CI_HDRC_REQUIRE_TRANSCEIVER |
 				  CI_HDRC_DISABLE_STREAMING,
 	};
 	int ret;
+	const struct of_device_id *of_id =
+			of_match_device(ci_hdrc_imx_dt_ids, &pdev->dev);
+	const struct ci_hdrc_imx_platform_flag *imx_platform_flag = of_id->data;
 
 	data = devm_kzalloc(&pdev->dev, sizeof(*data), GFP_KERNEL);
 	if (!data) {
@@ -108,30 +139,29 @@ static int ci_hdrc_imx_probe(struct platform_device *pdev)
 	}
 
 	data->phy = devm_usb_get_phy_by_phandle(&pdev->dev, "fsl,usbphy", 0);
-	if (!IS_ERR(data->phy)) {
-		ret = usb_phy_init(data->phy);
-		if (ret) {
-			dev_err(&pdev->dev, "unable to init phy: %d\n", ret);
-			goto err_clk;
-		}
-	} else if (PTR_ERR(data->phy) == -EPROBE_DEFER) {
-		ret = -EPROBE_DEFER;
+	if (IS_ERR(data->phy)) {
+		ret = PTR_ERR(data->phy);
+		/* Return -EINVAL if no usbphy is available */
+		if (ret == -ENODEV)
+			ret = -EINVAL;
 		goto err_clk;
 	}
 
 	pdata.phy = data->phy;
 
-	if (!pdev->dev.dma_mask)
-		pdev->dev.dma_mask = &pdev->dev.coherent_dma_mask;
-	if (!pdev->dev.coherent_dma_mask)
-		pdev->dev.coherent_dma_mask = DMA_BIT_MASK(32);
+	if (imx_platform_flag->flags & CI_HDRC_IMX_IMX28_WRITE_FIX)
+		pdata.flags |= CI_HDRC_IMX28_WRITE_FIX;
+
+	ret = dma_coerce_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
+	if (ret)
+		goto err_clk;
 
 	if (data->usbmisc_data) {
 		ret = imx_usbmisc_init(data->usbmisc_data);
 		if (ret) {
 			dev_err(&pdev->dev, "usbmisc init failed, ret=%d\n",
 					ret);
-			goto err_phy;
+			goto err_clk;
 		}
 	}
 
@@ -143,7 +173,7 @@ static int ci_hdrc_imx_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev,
 			"Can't register ci_hdrc platform device, err=%d\n",
 			ret);
-		goto err_phy;
+		goto err_clk;
 	}
 
 	if (data->usbmisc_data) {
@@ -164,9 +194,6 @@ static int ci_hdrc_imx_probe(struct platform_device *pdev)
 
 disable_device:
 	ci_hdrc_remove_device(data->ci_pdev);
-err_phy:
-	if (data->phy)
-		usb_phy_shutdown(data->phy);
 err_clk:
 	clk_disable_unprepare(data->clk);
 	return ret;
@@ -178,20 +205,10 @@ static int ci_hdrc_imx_remove(struct platform_device *pdev)
 
 	pm_runtime_disable(&pdev->dev);
 	ci_hdrc_remove_device(data->ci_pdev);
-
-	if (data->phy)
-		usb_phy_shutdown(data->phy);
-
 	clk_disable_unprepare(data->clk);
 
 	return 0;
 }
-
-static const struct of_device_id ci_hdrc_imx_dt_ids[] = {
-	{ .compatible = "fsl,imx27-usb", },
-	{ /* sentinel */ }
-};
-MODULE_DEVICE_TABLE(of, ci_hdrc_imx_dt_ids);
 
 static struct platform_driver ci_hdrc_imx_driver = {
 	.probe = ci_hdrc_imx_probe,

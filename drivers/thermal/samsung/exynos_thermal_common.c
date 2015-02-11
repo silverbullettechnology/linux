@@ -280,7 +280,7 @@ static int exynos_get_trend(struct thermal_zone_device *thermal,
 	return 0;
 }
 /* Operation callback functions for thermal zone */
-static struct thermal_zone_device_ops const exynos_dev_ops = {
+static struct thermal_zone_device_ops exynos_dev_ops = {
 	.bind = exynos_bind,
 	.unbind = exynos_unbind,
 	.get_temp = exynos_get_temp,
@@ -417,13 +417,10 @@ void exynos_unregister_thermal(struct thermal_sensor_conf *sensor_conf)
 
 	th_zone = sensor_conf->pzone_data;
 
-	if (th_zone->therm_dev)
-		thermal_zone_device_unregister(th_zone->therm_dev);
+	thermal_zone_device_unregister(th_zone->therm_dev);
 
-	for (i = 0; i < th_zone->cool_dev_size; i++) {
-		if (th_zone->cool_dev[i])
-			cpufreq_cooling_unregister(th_zone->cool_dev[i]);
-	}
+	for (i = 0; i < th_zone->cool_dev_size; ++i)
+		cpufreq_cooling_unregister(th_zone->cool_dev[i]);
 
 	dev_info(sensor_conf->dev,
 		"Exynos: Kernel Thermal management unregistered\n");
