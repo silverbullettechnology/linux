@@ -129,7 +129,7 @@ static int sdhci_arasan_probe(struct platform_device *pdev)
 	struct sdhci_host *host;
 	struct sdhci_pltfm_host *pltfm_host;
 	struct sdhci_arasan_data *sdhci_arasan;
-	u32 has_cd;
+	u32 prop;
 
 	sdhci_arasan = devm_kzalloc(&pdev->dev, sizeof(*sdhci_arasan),
 			GFP_KERNEL);
@@ -172,10 +172,15 @@ static int sdhci_arasan_probe(struct platform_device *pdev)
 	pltfm_host->priv = sdhci_arasan;
 	pltfm_host->clk = clk_xin;
 
-	has_cd = 1;
-	of_property_read_u32(pdev->dev.of_node, "xlnx,has-cd", &has_cd);
-	if ( !has_cd )
+	prop = 1;
+	of_property_read_u32(pdev->dev.of_node, "xlnx,has-cd", &prop);
+	if ( !prop )
 		host->quirks |= SDHCI_QUIRK_BROKEN_CARD_DETECTION;
+
+	prop = 1;
+	of_property_read_u32(pdev->dev.of_node, "xlnx,has-wp", &prop);
+	if ( !prop )
+		host->quirks |= SDHCI_QUIRK_INVERTED_WRITE_PROTECT;
 
 	ret = sdhci_add_host(host);
 	if (ret) {
