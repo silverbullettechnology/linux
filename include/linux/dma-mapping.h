@@ -236,4 +236,14 @@ struct dma_attrs;
 #define dma_unmap_len_set(PTR, LEN_NAME, VAL)    do { } while (0)
 #endif
 
+static inline size_t atomic_pool_size (void)
+{
+#ifdef ARCH_HAS_ATOMIC_POOL_SIZE
+	size_t __atomic_pool_size (void);
+	return __atomic_pool_size();
+#else
+	return 0;
+#endif
+}
+
 #endif

@@ -233,6 +233,8 @@ struct xilinx_dma_chan {
 
 	bool cyclic;
 	struct debugfs_regset32 debugfs_regset;
+
+	u32 private;
 };
 
 struct xilinx_dma_device {
@@ -692,6 +694,32 @@ static void xilinx_dma_issue_pending(struct dma_chan *dchan)
 	struct xilinx_dma_chan *chan = to_xilinx_chan(dchan);
 	chan->start_transfer(chan);
 }
+
+static int xilinx_dma_slave_caps (struct dma_chan *dchan, struct dma_slave_caps *caps)
+{
+	struct xilinx_dma_chan *chan = to_xilinx_chan(dchan);
+
+	caps->src_addr_widths = 0;
+	switch ( chan->feature & XILINX_DMA_FTR_DATA_WIDTH_MASK ) {
+	case 0:  caps->src_addr_widths = 1 << DMA_SLAVE_BUSWIDTH_1_BYTE;    break;
+	case 1:  caps->src_addr_widths = 1 << DMA_SLAVE_BUSWIDTH_2_BYTES;   break;
+	case 3:  caps->src_addr_widths = 1 << DMA_SLAVE_BUSWIDTH_4_BYTES;   break;
+	case 7:  caps->src_addr_widths = 1 << DMA_SLAVE_BUSWIDTH_8_BYTES;   break;
+	default: caps->src_addr_widths = 1 << DMA_SLAVE_BUSWIDTH_UNDEFINED; break;
+	}
+	caps->dstn_addr_widths = caps->src_addr_widths;
+
+	switch ( chan->direction ) {
+	case DMA_MEM_TO_DEV: caps->directions = 1 << DMA_MEM_TO_DEV; break;
+	case DMA_DEV_TO_MEM: caps->directions = 1 << DMA_DEV_TO_MEM; break;
+	default:             caps->directions = 0;                   break;
+	}
+	caps->cmd_pause = false;
+	caps->cmd_terminate = false;
+
+	return 0;
+}
+
 
 /**
  * xilinx_dma_update_completed_cookie - Update the completed cookie.
@@ -1410,9 +1438,10 @@ static int xilinx_dma_chan_probe(struct xilinx_dma_device *xdev,
 	 * Can change it to be a structure to have more matching information
 	 */
 	of_property_read_u32(node, "xlnx,device-id", &device_id);
-	chan->common.private = (chan->direction & 0xFF) |
+	chan->private = (chan->direction & 0xFF) |
 		(chan->feature & XILINX_DMA_IP_MASK) | 
 		(device_id << XILINX_DMA_DEVICE_ID_SHIFT);
+	chan->common.private = &chan->private;
 
 	if (!chan->has_DRE)
 		xdev->common.copy_align = ilog2(width);
@@ -1501,6 +1530,7 @@ static int xilinx_dma_of_probe(struct platform_device *pdev)
 		xdev->common.device_prep_dma_cyclic = xilinx_dma_prep_dma_cyclic;
 		xdev->common.device_control = xilinx_dma_device_control;
 		xdev->common.device_issue_pending = xilinx_dma_issue_pending;
+		xdev->common.device_slave_caps = xilinx_dma_slave_caps;
 	}
 
 	if (of_device_is_compatible(node, "xlnx,axi-vdma")) {

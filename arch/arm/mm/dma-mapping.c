@@ -298,7 +298,7 @@ static void __dma_free_remap(void *cpu_addr, size_t size)
 	vunmap(cpu_addr);
 }
 
-#define DEFAULT_DMA_COHERENT_POOL_SIZE	SZ_256K
+#define DEFAULT_DMA_COHERENT_POOL_SIZE	SZ_16M
 
 struct dma_pool {
 	size_t size;
@@ -312,6 +312,12 @@ struct dma_pool {
 static struct dma_pool atomic_pool = {
 	.size = DEFAULT_DMA_COHERENT_POOL_SIZE,
 };
+
+size_t __atomic_pool_size (void)
+{
+	return atomic_pool.size;
+}
+EXPORT_SYMBOL(__atomic_pool_size);
 
 static int __init early_coherent_pool(char *p)
 {

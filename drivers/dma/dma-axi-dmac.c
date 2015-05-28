@@ -98,6 +98,8 @@ struct axi_dmac {
 	void *test_virt;
 	dma_addr_t test_phys;
 #endif
+
+	u32 device_id;
 };
 
 static struct axi_dmac *chan_to_axi_dmac(struct axi_dmac_chan *chan)
@@ -518,7 +520,6 @@ static int axi_dmac_probe(struct platform_device *pdev)
 	struct axi_dmac *dmac;
 	struct resource *res;
 	u32 chan_type;
-	u32 device_id;
 	u32 buswidth;
 	int ret;
 #ifdef SPEED_TEST
@@ -600,10 +601,9 @@ static int axi_dmac_probe(struct platform_device *pdev)
 	else
 		dmac->chan.vchan.chan.device->copy_align = ilog2(buswidth >> 3);
 
-	device_id = 0;
-	of_property_read_u32(of_chan, "sbt,device-id", &device_id);
-	if ( device_id )
-		dmac->chan.vchan.chan.private = (void *)device_id;
+	dmac->device_id = 0;
+	of_property_read_u32(of_chan, "sbt,device-id", &dmac->device_id);
+	dmac->chan.vchan.chan.private = &dmac->device_id;
 
 	ret = dma_async_device_register(dma_dev);
 	if (ret)
