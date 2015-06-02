@@ -27,8 +27,6 @@
 #include <linux/iio/sysfs.h>
 #include <linux/iio/frequency/adf5355.h>
 
-#include "adf5355.h"
-
 /* REG0 Bit Definitions */
 #define ADF5355_REG0_INT(x)			(((x) & 0xFFFF) << 4)
 #define ADF5355_REG0_PRESCALER(x)		((x) << 20)
@@ -932,6 +930,7 @@ static int adf5355_remove(struct spi_device *spi)
 static const struct spi_device_id adf5355_id[] = {
 	{"adf5355", 5355},
 	{"adf4355-2", 4355},
+	{"adf4355-3", 4355},
 	{}
 };
 

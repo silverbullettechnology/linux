@@ -49,7 +49,7 @@
 #define ADI_MUX_OVER_RANGE		(1 << 1)
 #define ADI_STATUS			(1 << 0)
 
-#define ADI_REG_DELAY_CNTRL		0x0060
+#define ADI_REG_DELAY_CNTRL		0x0060	/* <= v8.0 */
 #define ADI_DELAY_SEL			(1 << 17)
 #define ADI_DELAY_RWN			(1 << 16)
 #define ADI_DELAY_ADDRESS(x)		(((x) & 0xFF) << 8)
@@ -57,7 +57,7 @@
 #define ADI_DELAY_WDATA(x)		(((x) & 0x1F) << 0)
 #define ADI_TO_DELAY_WDATA(x)		(((x) >> 0) & 0x1F)
 
-#define ADI_REG_DELAY_STATUS		0x0064
+#define ADI_REG_DELAY_STATUS		0x0064 /* <= v8.0 */
 #define ADI_DELAY_LOCKED			(1 << 9)
 #define ADI_DELAY_STATUS			(1 << 8)
 #define ADI_DELAY_RDATA(x)		(((x) & 0x1F) << 0)
@@ -166,6 +166,9 @@ enum adc_data_sel {
 #define ADI_TO_USR_DECIMATION_N(x)		(((x) >> 0) & 0xFFFF)
 
 #define ADI_REG_ADC_DP_DISABLE 			0x00C0
+
+/* PCORE Version > 8.00 */
+#define ADI_REG_DELAY(l)				(0x0800 + (l) * 0x4)
 
 /*
  * ADI High-Speed ADC common spi interface registers
@@ -283,13 +286,22 @@ enum adc_data_sel {
 #define AD9680_REG_CHIP_ID_HIGH		0x005
 #define AD9680_REG_DEVICE_INDEX		0x008
 #define AD9680_REG_INPUT_FS_RANGE	0x025
+#define AD9680_REG_CHIP_PIN_CTRL	0x040
 
 #define AD9680_REG_OUTPUT_MODE		0x561
 #define AD9680_REG_TEST_MODE		0x550
 
+#define AD9680_REG_THRESH_CTRL		0x245
+#define AD9680_REG_THRESH_HI_LSB	0x247
+#define AD9680_REG_THRESH_HI_MSB	0x248
+#define AD9680_REG_THRESH_LOW_LSB	0x249
+#define AD9680_REG_THRESH_LOW_MSB	0x24A
+
 #define CHIPID_AD9680			0xC5
 #define AD9680_DEF_OUTPUT_MODE		0x00
 #define AD9680_REG_VREF_MASK		0x0F
+
+#define AD9680_REG_CHIP_PIN_CTRL_MASK(chn)	(0x07 << (3 * (chn)))
 
 /*
  * Analog Devices AD9652
@@ -351,6 +363,8 @@ struct axiadc_state {
 	bool				streaming_dma;
 	unsigned			have_slave_channels;
 
+	struct iio_hw_consumer	*frontend;
+
 	struct iio_chan_spec	channels[16];
 };
 
@@ -385,6 +399,33 @@ struct axiadc_converter {
 			 int val,
 			 int val2,
 			 long mask);
+
+	int (*read_event_value)(struct iio_dev *indio_dev,
+			struct iio_chan_spec const *chan,
+			enum iio_event_type type,
+			enum iio_event_direction dir,
+			enum iio_event_info info,
+			int *val,
+			int *val2);
+
+	int (*write_event_value)(struct iio_dev *indio_dev,
+			struct iio_chan_spec const *chan,
+			enum iio_event_type type,
+			enum iio_event_direction dir,
+			enum iio_event_info info,
+			int val,
+			int val2);
+
+	int (*read_event_config)(struct iio_dev *indio_dev,
+			const struct iio_chan_spec *chan,
+			enum iio_event_type type,
+			enum iio_event_direction dir);
+
+	int (*write_event_config)(struct iio_dev *indio_dev,
+			const struct iio_chan_spec *chan,
+			enum iio_event_type type,
+			enum iio_event_direction dir,
+			int state);
 
 	int (*post_setup)(struct iio_dev *indio_dev);
 	int (*testmode_set)(struct iio_dev *indio_dev, unsigned chan,
@@ -430,6 +471,21 @@ static inline void axiadc_slave_write(struct axiadc_state *st, unsigned reg, uns
 static inline unsigned int axiadc_slave_read(struct axiadc_state *st, unsigned reg)
 {
 	return ioread32(st->slave_regs + reg);
+}
+
+
+static inline void axiadc_idelay_set(struct axiadc_state *st,
+				unsigned lane, unsigned val)
+{
+	if (PCORE_VERSION_MAJOR(st->pcore_version) > 8) {
+		axiadc_write(st, ADI_REG_DELAY(lane), val);
+	} else {
+		axiadc_write(st, ADI_REG_DELAY_CNTRL, 0);
+		axiadc_write(st, ADI_REG_DELAY_CNTRL,
+				ADI_DELAY_ADDRESS(lane)
+				| ADI_DELAY_WDATA(val)
+				| ADI_DELAY_SEL);
+	}
 }
 
 int axiadc_set_pnsel(struct axiadc_state *st, int channel, enum adc_pn_sel sel);

@@ -28,139 +28,495 @@
 #include <linux/iio/iio.h>
 #include <linux/iio/sysfs.h>
 
-#include "cf_axi_adc.h"
-#include "ad9361.h"
-
 #include <linux/clk.h>
 #include <linux/clkdev.h>
 #include <linux/clk-provider.h>
 
-enum ad9361_clocks {
-	BB_REFCLK,
-	RX_REFCLK,
-	TX_REFCLK,
-	BBPLL_CLK,
-	ADC_CLK,
-	R2_CLK,
-	R1_CLK,
-	CLKRF_CLK,
-	RX_SAMPL_CLK,
-	DAC_CLK,
-	T2_CLK,
-	T1_CLK,
-	CLKTF_CLK,
-	TX_SAMPL_CLK,
-	RX_RFPLL,
-	TX_RFPLL,
-	NUM_AD9361_CLKS,
-};
+#include "ad9361.h"
 
-enum debugfs_cmd {
-	DBGFS_NONE,
-	DBGFS_INIT,
-	DBGFS_LOOPBACK,
-	DBGFS_BIST_PRBS,
-	DBGFS_BIST_TONE,
-	DBGFS_BIST_DT_ANALYSIS,
-	DBGFS_RXGAIN_1,
-	DBGFS_RXGAIN_2,
-	DBGFS_MCS,
-	DBGFS_CAL_SW_CTRL,
-};
+static const struct SynthLUT SynthLUT_FDD[LUT_FTDD_ENT][SYNTH_LUT_SIZE] = {
+{
+	{12605, 10, 0, 4, 0, 15, 8, 8, 12, 3, 14, 15, 11}, /* 40 MHz */
+	{12245, 10, 0, 4, 0, 15, 8, 9, 12, 3, 14, 15, 11},
+	{11906, 10, 0, 4, 0, 15, 8, 9, 12, 3, 14, 15, 11},
+	{11588, 10, 0, 4, 0, 15, 8, 10, 12, 3, 14, 15, 11},
+	{11288, 10, 0, 4, 0, 15, 8, 11, 12, 3, 14, 15, 11},
+	{11007, 10, 0, 4, 0, 15, 8, 11, 12, 3, 14, 15, 11},
+	{10742, 10, 0, 4, 0, 14, 8, 12, 12, 3, 14, 15, 11},
+	{10492, 10, 0, 5, 1, 14, 9, 13, 12, 3, 14, 15, 11},
+	{10258, 10, 0, 5, 1, 14, 9, 13, 12, 3, 14, 15, 11},
+	{10036, 10, 0, 5, 1, 14, 9, 14, 12, 3, 14, 15, 11},
+	{9827, 10, 0, 5, 1, 14, 9, 15, 12, 3, 14, 15, 11},
+	{9631, 10, 0, 5, 1, 14, 9, 15, 12, 3, 14, 15, 11},
+	{9445, 10, 0, 5, 1, 14, 9, 16, 12, 3, 14, 15, 11},
+	{9269, 10, 0, 5, 1, 14, 9, 17, 12, 3, 14, 15, 11},
+	{9103, 10, 0, 5, 1, 14, 9, 17, 12, 3, 14, 15, 11},
+	{8946, 10, 0, 5, 1, 14, 9, 18, 12, 3, 14, 15, 11},
+	{8797, 10, 1, 6, 1, 15, 11, 13, 12, 3, 14, 15, 11},
+	{8655, 10, 1, 6, 1, 15, 11, 14, 12, 3, 14, 15, 11},
+	{8520, 10, 1, 6, 1, 15, 11, 14, 12, 3, 14, 15, 11},
+	{8392, 10, 1, 6, 1, 15, 11, 15, 12, 3, 14, 15, 11},
+	{8269, 10, 1, 6, 1, 15, 11, 15, 12, 3, 14, 15, 11},
+	{8153, 10, 1, 6, 1, 15, 11, 16, 12, 3, 14, 15, 11},
+	{8041, 10, 1, 6, 1, 15, 11, 16, 12, 3, 14, 15, 11},
+	{7934, 10, 1, 6, 1, 15, 11, 17, 12, 3, 14, 15, 11},
+	{7831, 10, 1, 6, 1, 15, 11, 17, 12, 3, 14, 15, 11},
+	{7733, 10, 1, 6, 1, 15, 11, 17, 12, 3, 14, 15, 11},
+	{7638, 10, 1, 6, 1, 15, 11, 18, 12, 3, 14, 15, 11},
+	{7547, 10, 1, 6, 1, 15, 11, 18, 12, 3, 14, 15, 11},
+	{7459, 10, 1, 6, 1, 15, 11, 19, 12, 3, 14, 15, 11},
+	{7374, 10, 1, 7, 2, 15, 12, 19, 12, 3, 14, 15, 11},
+	{7291, 10, 1, 7, 2, 15, 12, 20, 12, 3, 14, 15, 11},
+	{7212, 10, 1, 7, 2, 15, 12, 20, 12, 3, 14, 15, 11},
+	{7135, 10, 1, 7, 2, 15, 14, 21, 12, 3, 14, 15, 11},
+	{7061, 10, 1, 7, 2, 15, 14, 21, 12, 3, 14, 15, 11},
+	{6988, 10, 1, 7, 2, 15, 14, 22, 12, 3, 14, 15, 11},
+	{6918, 10, 1, 7, 2, 15, 14, 22, 12, 3, 14, 15, 11},
+	{6850, 10, 1, 7, 2, 15, 14, 23, 12, 3, 14, 15, 11},
+	{6784, 10, 1, 7, 2, 15, 14, 23, 12, 3, 14, 15, 11},
+	{6720, 10, 1, 7, 2, 15, 14, 24, 12, 3, 14, 15, 11},
+	{6658, 10, 1, 7, 2, 15, 14, 24, 12, 3, 14, 15, 11},
+	{6597, 10, 1, 7, 2, 15, 14, 25, 12, 3, 14, 15, 11},
+	{6539, 10, 1, 7, 2, 15, 14, 25, 12, 3, 14, 15, 11},
+	{6482, 10, 1, 7, 2, 15, 14, 26, 12, 3, 14, 15, 11},
+	{6427, 10, 1, 7, 2, 15, 14, 26, 12, 3, 14, 15, 11},
+	{6373, 10, 3, 7, 3, 15, 12, 17, 12, 3, 14, 15, 11},
+	{6321, 10, 3, 7, 3, 15, 12, 17, 12, 3, 14, 15, 11},
+	{6270, 10, 3, 7, 3, 15, 12, 17, 12, 3, 14, 15, 11},
+	{6222, 10, 3, 7, 3, 15, 12, 18, 12, 3, 14, 15, 11},
+	{6174, 10, 3, 7, 3, 15, 12, 18, 12, 3, 14, 15, 11},
+	{6128, 10, 3, 7, 3, 15, 12, 18, 12, 3, 14, 15, 11},
+	{6083, 10, 3, 7, 3, 15, 12, 18, 12, 3, 14, 15, 11},
+	{6040, 10, 3, 7, 3, 15, 12, 19, 12, 3, 14, 15, 11},
+	{5997, 10, 3, 7, 3, 15, 12, 19, 12, 3, 14, 15, 11},
+}, {
+	{12605, 10, 0, 4, 0, 15, 8, 10, 15, 4, 13, 15, 10},  /* 60 MHz */
+	{12245, 10, 0, 4, 0, 15, 8, 11, 15, 4, 13, 15, 10},
+	{11906, 10, 0, 4, 0, 15, 8, 11, 15, 4, 13, 15, 10},
+	{11588, 10, 0, 4, 0, 15, 8, 12, 15, 4, 13, 15, 10},
+	{11288, 10, 0, 4, 0, 15, 8, 13, 15, 4, 13, 15, 10},
+	{11007, 10, 0, 4, 0, 14, 8, 14, 15, 4, 13, 15, 10},
+	{10742, 10, 0, 4, 0, 14, 8, 15, 15, 4, 13, 15, 10},
+	{10492, 10, 0, 5, 1, 14, 9, 15, 15, 4, 13, 15, 10},
+	{10258, 10, 0, 5, 1, 14, 9, 16, 15, 4, 13, 15, 10},
+	{10036, 10, 0, 5, 1, 14, 9, 17, 15, 4, 13, 15, 10},
+	{9827, 10, 0, 5, 1, 14, 9, 18, 15, 4, 13, 15, 10},
+	{9631, 10, 0, 5, 1, 14, 9, 19, 15, 4, 13, 15, 10},
+	{9445, 10, 0, 5, 1, 14, 9, 19, 15, 4, 13, 15, 10},
+	{9269, 10, 0, 5, 1, 14, 9, 20, 15, 4, 13, 15, 10},
+	{9103, 10, 0, 5, 1, 13, 9, 21, 15, 4, 13, 15, 10},
+	{8946, 10, 0, 5, 1, 13, 9, 22, 15, 4, 13, 15, 10},
+	{8797, 10, 1, 6, 1, 15, 11, 16, 15, 4, 13, 15, 10},
+	{8655, 10, 1, 6, 1, 15, 11, 17, 15, 4, 13, 15, 10},
+	{8520, 10, 1, 6, 1, 15, 11, 17, 15, 4, 13, 15, 10},
+	{8392, 10, 1, 6, 1, 15, 11, 18, 15, 4, 13, 15, 10},
+	{8269, 10, 1, 6, 1, 15, 11, 18, 15, 4, 13, 15, 10},
+	{8153, 10, 1, 6, 1, 15, 11, 19, 15, 4, 13, 15, 10},
+	{8041, 10, 1, 6, 1, 15, 11, 19, 15, 4, 13, 15, 10},
+	{7934, 10, 1, 6, 1, 15, 11, 20, 15, 4, 13, 15, 10},
+	{7831, 10, 1, 6, 1, 15, 11, 21, 15, 4, 13, 15, 10},
+	{7733, 10, 1, 6, 1, 15, 11, 21, 15, 4, 13, 15, 10},
+	{7638, 10, 1, 6, 1, 15, 11, 22, 15, 4, 13, 15, 10},
+	{7547, 10, 1, 6, 1, 15, 11, 22, 15, 4, 13, 15, 10},
+	{7459, 10, 1, 6, 1, 15, 11, 23, 15, 4, 13, 15, 10},
+	{7374, 10, 1, 7, 2, 15, 12, 23, 15, 4, 13, 15, 10},
+	{7291, 10, 1, 7, 2, 15, 12, 24, 15, 4, 13, 15, 10},
+	{7212, 10, 1, 7, 2, 15, 12, 25, 15, 4, 13, 15, 10},
+	{7135, 10, 1, 7, 2, 15, 14, 25, 15, 4, 13, 15, 10},
+	{7061, 10, 1, 7, 2, 15, 14, 26, 15, 4, 13, 15, 10},
+	{6988, 10, 1, 7, 2, 15, 14, 26, 15, 4, 13, 15, 10},
+	{6918, 10, 1, 7, 2, 15, 14, 27, 15, 4, 13, 15, 10},
+	{6850, 10, 1, 7, 2, 15, 14, 27, 15, 4, 13, 15, 10},
+	{6784, 10, 1, 7, 2, 15, 14, 28, 15, 4, 13, 15, 10},
+	{6720, 10, 1, 7, 2, 15, 14, 29, 15, 4, 13, 15, 10},
+	{6658, 10, 1, 7, 2, 15, 14, 29, 15, 4, 13, 15, 10},
+	{6597, 10, 1, 7, 2, 15, 14, 30, 15, 4, 13, 15, 10},
+	{6539, 10, 1, 7, 2, 15, 14, 30, 15, 4, 13, 15, 10},
+	{6482, 10, 1, 7, 2, 15, 14, 31, 15, 4, 13, 15, 10},
+	{6427, 10, 1, 7, 2, 15, 14, 32, 15, 4, 13, 15, 10},
+	{6373, 10, 3, 7, 3, 15, 12, 20, 15, 4, 13, 15, 10},
+	{6321, 10, 3, 7, 3, 15, 12, 21, 15, 4, 13, 15, 10},
+	{6270, 10, 3, 7, 3, 15, 12, 21, 15, 4, 13, 15, 10},
+	{6222, 10, 3, 7, 3, 15, 12, 21, 15, 4, 13, 15, 10},
+	{6174, 10, 3, 7, 3, 15, 12, 22, 15, 4, 13, 15, 10},
+	{6128, 10, 3, 7, 3, 15, 12, 22, 15, 4, 13, 15, 10},
+	{6083, 10, 3, 7, 3, 15, 12, 22, 15, 4, 13, 15, 10},
+	{6040, 10, 3, 7, 3, 15, 12, 23, 15, 4, 13, 15, 10},
+	{5997, 10, 3, 7, 3, 15, 12, 23, 15, 4, 13, 15, 10},
+}, {
+	{12605, 10, 0, 4, 0, 15, 8, 8, 13, 4, 13, 15, 9},   /* 80 MHz */
+	{12245, 10, 0, 4, 0, 15, 8, 9, 13, 4, 13, 15, 9},
+	{11906, 10, 0, 4, 0, 15, 8, 10, 13, 4, 13, 15, 9},
+	{11588, 10, 0, 4, 0, 15, 8, 11, 13, 4, 13, 15, 9},
+	{11288, 10, 0, 4, 0, 15, 8, 11, 13, 4, 13, 15, 9},
+	{11007, 10, 0, 4, 0, 14, 8, 12, 13, 4, 13, 15, 9},
+	{10742, 10, 0, 4, 0, 14, 8, 13, 13, 4, 13, 15, 9},
+	{10492, 10, 0, 5, 1, 14, 9, 13, 13, 4, 13, 15, 9},
+	{10258, 10, 0, 5, 1, 14, 9, 14, 13, 4, 13, 15, 9},
+	{10036, 10, 0, 5, 1, 14, 9, 15, 13, 4, 13, 15, 9},
+	{9827, 10, 0, 5, 1, 14, 9, 15, 13, 4, 13, 15, 9},
+	{9631, 10, 0, 5, 1, 13, 9, 16, 13, 4, 13, 15, 9},
+	{9445, 10, 0, 5, 1, 13, 9, 17, 13, 4, 13, 15, 9},
+	{9269, 10, 0, 5, 1, 13, 9, 18, 13, 4, 13, 15, 9},
+	{9103, 10, 0, 5, 1, 13, 9, 18, 13, 4, 13, 15, 9},
+	{8946, 10, 0, 5, 1, 13, 9, 19, 13, 4, 13, 15, 9},
+	{8797, 10, 1, 6, 1, 15, 11, 14, 13, 4, 13, 15, 9},
+	{8655, 10, 1, 6, 1, 15, 11, 14, 13, 4, 13, 15, 9},
+	{8520, 10, 1, 6, 1, 15, 11, 15, 13, 4, 13, 15, 9},
+	{8392, 10, 1, 6, 1, 15, 11, 15, 13, 4, 13, 15, 9},
+	{8269, 10, 1, 6, 1, 15, 11, 16, 13, 4, 13, 15, 9},
+	{8153, 10, 1, 6, 1, 15, 11, 16, 13, 4, 13, 15, 9},
+	{8041, 10, 1, 6, 1, 15, 11, 17, 13, 4, 13, 15, 9},
+	{7934, 10, 1, 6, 1, 15, 11, 17, 13, 4, 13, 15, 9},
+	{7831, 10, 1, 6, 1, 15, 11, 18, 13, 4, 13, 15, 9},
+	{7733, 10, 1, 6, 1, 15, 11, 18, 13, 4, 13, 15, 9},
+	{7638, 10, 1, 6, 1, 15, 11, 19, 13, 4, 13, 15, 9},
+	{7547, 10, 1, 6, 1, 15, 11, 19, 13, 4, 13, 15, 9},
+	{7459, 10, 1, 6, 1, 15, 11, 20, 13, 4, 13, 15, 9},
+	{7374, 10, 1, 7, 2, 15, 12, 20, 13, 4, 13, 15, 9},
+	{7291, 10, 1, 7, 2, 15, 12, 21, 13, 4, 13, 15, 9},
+	{7212, 10, 1, 7, 2, 15, 12, 21, 13, 4, 13, 15, 9},
+	{7135, 10, 1, 7, 2, 15, 14, 22, 13, 4, 13, 15, 9},
+	{7061, 10, 1, 7, 2, 15, 14, 22, 13, 4, 13, 15, 9},
+	{6988, 10, 1, 7, 2, 15, 14, 23, 13, 4, 13, 15, 9},
+	{6918, 10, 1, 7, 2, 15, 14, 23, 13, 4, 13, 15, 9},
+	{6850, 10, 1, 7, 2, 15, 14, 24, 13, 4, 13, 15, 9},
+	{6784, 10, 1, 7, 2, 15, 14, 24, 13, 4, 13, 15, 9},
+	{6720, 10, 1, 7, 2, 15, 14, 25, 13, 4, 13, 15, 9},
+	{6658, 10, 1, 7, 2, 15, 14, 25, 13, 4, 13, 15, 9},
+	{6597, 10, 1, 7, 2, 15, 14, 26, 13, 4, 13, 15, 9},
+	{6539, 10, 1, 7, 2, 15, 14, 26, 13, 4, 13, 15, 9},
+	{6482, 10, 1, 7, 2, 15, 14, 27, 13, 4, 13, 15, 9},
+	{6427, 10, 1, 7, 2, 15, 14, 27, 13, 4, 13, 15, 9},
+	{6373, 10, 3, 7, 3, 15, 12, 18, 13, 4, 13, 15, 9},
+	{6321, 10, 3, 7, 3, 15, 12, 18, 13, 4, 13, 15, 9},
+	{6270, 10, 3, 7, 3, 15, 12, 18, 13, 4, 13, 15, 9},
+	{6222, 10, 3, 7, 3, 15, 12, 19, 13, 4, 13, 15, 9},
+	{6174, 10, 3, 7, 3, 15, 12, 19, 13, 4, 13, 15, 9},
+	{6128, 10, 3, 7, 3, 15, 12, 19, 13, 4, 13, 15, 9},
+	{6083, 10, 3, 7, 3, 15, 12, 19, 13, 4, 13, 15, 9},
+	{6040, 10, 3, 7, 3, 15, 12, 20, 13, 4, 13, 15, 9},
+	{5997, 10, 3, 7, 3, 15, 12, 20, 13, 4, 13, 15, 9},
+}};
 
-enum ad9361_bist_mode {
-	BIST_DISABLE,
-	BIST_INJ_TX,
-	BIST_INJ_RX,
-};
+static struct SynthLUT SynthLUT_TDD[LUT_FTDD_ENT][SYNTH_LUT_SIZE] = {
+{
+	{12605, 13, 0, 4, 0, 14, 0, 10, 12, 3, 14, 15, 11},   /* 40 MHz */
+	{12245, 13, 0, 4, 0, 13, 0, 10, 12, 3, 14, 15, 11},
+	{11906, 13, 0, 4, 0, 12, 0, 11, 12, 3, 14, 15, 11},
+	{11588, 13, 0, 4, 0, 12, 0, 12, 12, 3, 14, 15, 11},
+	{11288, 13, 0, 4, 0, 12, 0, 13, 12, 3, 14, 15, 11},
+	{11007, 13, 0, 4, 0, 11, 0, 13, 12, 3, 14, 15, 11},
+	{10742, 13, 0, 4, 0, 11, 0, 14, 12, 3, 14, 15, 11},
+	{10492, 13, 0, 5, 1, 11, 0, 15, 12, 3, 14, 15, 11},
+	{10258, 13, 0, 5, 1, 10, 0, 16, 12, 3, 14, 15, 11},
+	{10036, 13, 0, 5, 1, 10, 0, 17, 12, 3, 14, 15, 11},
+	{9827, 13, 0, 5, 1, 10, 0, 17, 12, 3, 14, 15, 11},
+	{9631, 13, 0, 5, 1, 10, 0, 18, 12, 3, 14, 15, 11},
+	{9445, 13, 0, 5, 1, 9, 0, 19, 12, 3, 14, 15, 11},
+	{9269, 10, 0, 6, 1, 12, 0, 17, 12, 3, 14, 15, 11},
+	{9103, 10, 0, 6, 1, 12, 0, 17, 12, 3, 14, 15, 11},
+	{8946, 10, 0, 6, 1, 11, 0, 18, 12, 3, 14, 15, 11},
+	{8797, 10, 0, 6, 1, 11, 0, 19, 12, 3, 14, 15, 11},
+	{8655, 10, 0, 6, 1, 11, 0, 19, 12, 3, 14, 15, 11},
+	{8520, 10, 0, 6, 1, 11, 0, 20, 12, 3, 14, 15, 11},
+	{8392, 10, 0, 6, 1, 11, 0, 21, 12, 3, 14, 15, 11},
+	{8269, 10, 0, 6, 1, 11, 0, 21, 12, 3, 14, 15, 11},
+	{8153, 10, 0, 6, 1, 11, 0, 22, 12, 3, 14, 15, 11},
+	{8041, 10, 0, 6, 1, 11, 0, 23, 12, 3, 14, 15, 11},
+	{7934, 10, 0, 6, 1, 11, 0, 23, 12, 3, 14, 15, 11},
+	{7831, 10, 0, 6, 1, 10, 0, 24, 12, 3, 14, 15, 11},
+	{7733, 10, 0, 6, 1, 10, 0, 25, 12, 3, 14, 15, 11},
+	{7638, 10, 0, 6, 1, 10, 0, 25, 12, 3, 14, 15, 11},
+	{7547, 10, 0, 6, 1, 10, 0, 26, 12, 3, 14, 15, 11},
+	{7459, 10, 0, 6, 1, 10, 0, 27, 12, 3, 14, 15, 11},
+	{7374, 10, 0, 7, 2, 10, 0, 27, 12, 3, 14, 15, 11},
+	{7291, 10, 0, 7, 2, 9, 0, 28, 12, 3, 14, 15, 11},
+	{7212, 10, 0, 7, 2, 9, 0, 29, 12, 3, 14, 15, 11},
+	{7135, 10, 0, 7, 2, 9, 0, 29, 12, 3, 14, 15, 11},
+	{7061, 10, 0, 7, 2, 9, 0, 30, 12, 3, 14, 15, 11},
+	{6988, 10, 0, 7, 2, 9, 0, 31, 12, 3, 14, 15, 11},
+	{6918, 10, 0, 7, 2, 9, 0, 31, 12, 3, 14, 15, 11},
+	{6850, 10, 0, 7, 2, 8, 0, 32, 12, 3, 14, 15, 11},
+	{6784, 10, 0, 7, 2, 8, 0, 33, 12, 3, 14, 15, 11},
+	{6720, 10, 0, 7, 2, 8, 0, 33, 12, 3, 14, 15, 11},
+	{6658, 10, 0, 7, 2, 8, 0, 34, 12, 3, 14, 15, 11},
+	{6597, 10, 0, 7, 2, 8, 0, 35, 12, 3, 14, 15, 11},
+	{6539, 10, 0, 7, 2, 8, 0, 35, 12, 3, 14, 15, 11},
+	{6482, 10, 0, 7, 2, 8, 0, 36, 12, 3, 14, 15, 11},
+	{6427, 10, 0, 7, 2, 7, 0, 37, 12, 3, 14, 15, 11},
+	{6373, 10, 0, 7, 3, 7, 0, 37, 12, 3, 14, 15, 11},
+	{6321, 10, 0, 7, 3, 7, 0, 38, 12, 3, 14, 15, 11},
+	{6270, 10, 0, 7, 3, 7, 0, 39, 12, 3, 14, 15, 11},
+	{6222, 10, 0, 7, 3, 7, 0, 39, 12, 3, 14, 15, 11},
+	{6174, 10, 0, 7, 3, 7, 0, 40, 12, 3, 14, 15, 11},
+	{6128, 10, 0, 7, 3, 7, 0, 41, 12, 3, 14, 15, 11},
+	{6083, 10, 0, 7, 3, 7, 0, 41, 12, 3, 14, 15, 11},
+	{6040, 10, 0, 7, 3, 6, 0, 42, 12, 3, 14, 15, 11},
+	{5997, 10, 0, 7, 3, 6, 0, 42, 12, 3, 14, 15, 11},
+}, {
+	{12605, 13, 0, 4, 0, 14, 0, 12, 15, 4, 13, 15, 10},   /* 60 MHz */
+	{12245, 13, 0, 4, 0, 13, 0, 13, 15, 4, 13, 15, 10},
+	{11906, 13, 0, 4, 0, 13, 0, 14, 15, 4, 13, 15, 10},
+	{11588, 13, 0, 4, 0, 12, 0, 14, 15, 4, 13, 15, 10},
+	{11288, 13, 0, 4, 0, 12, 0, 15, 15, 4, 13, 15, 10},
+	{11007, 13, 0, 4, 0, 12, 0, 16, 15, 4, 13, 15, 10},
+	{10742, 13, 0, 4, 0, 11, 0, 17, 15, 4, 13, 15, 10},
+	{10492, 13, 0, 5, 1, 11, 0, 18, 15, 4, 13, 15, 10},
+	{10258, 13, 0, 5, 1, 11, 0, 19, 15, 4, 13, 15, 10},
+	{10036, 13, 0, 5, 1, 10, 0, 20, 15, 4, 13, 15, 10},
+	{9827, 13, 0, 5, 1, 10, 0, 21, 15, 4, 13, 15, 10},
+	{9631, 13, 0, 5, 1, 10, 0, 22, 15, 4, 13, 15, 10},
+	{9445, 13, 0, 5, 1, 10, 0, 23, 15, 4, 13, 15, 10},
+	{9269, 10, 0, 6, 1, 12, 0, 20, 15, 4, 13, 15, 10},
+	{9103, 10, 0, 6, 1, 12, 0, 21, 15, 4, 13, 15, 10},
+	{8946, 10, 0, 6, 1, 12, 0, 22, 15, 4, 13, 15, 10},
+	{8797, 10, 0, 6, 1, 12, 0, 23, 15, 4, 13, 15, 10},
+	{8655, 10, 0, 6, 1, 12, 0, 23, 15, 4, 13, 15, 10},
+	{8520, 10, 0, 6, 1, 12, 0, 24, 15, 4, 13, 15, 10},
+	{8392, 10, 0, 6, 1, 12, 0, 25, 15, 4, 13, 15, 10},
+	{8269, 10, 0, 6, 1, 12, 0, 26, 15, 4, 13, 15, 10},
+	{8153, 10, 0, 6, 1, 12, 0, 27, 15, 4, 13, 15, 10},
+	{8041, 10, 0, 6, 1, 12, 0, 27, 15, 4, 13, 15, 10},
+	{7934, 10, 0, 6, 1, 11, 0, 28, 15, 4, 13, 15, 10},
+	{7831, 10, 0, 6, 1, 11, 0, 29, 15, 4, 13, 15, 10},
+	{7733, 10, 0, 6, 1, 11, 0, 30, 15, 4, 13, 15, 10},
+	{7638, 10, 0, 6, 1, 11, 0, 31, 15, 4, 13, 15, 10},
+	{7547, 10, 0, 6, 1, 11, 0, 31, 15, 4, 13, 15, 10},
+	{7459, 10, 0, 6, 1, 11, 0, 32, 15, 4, 13, 15, 10},
+	{7374, 10, 0, 7, 2, 11, 0, 33, 15, 4, 13, 15, 10},
+	{7291, 10, 0, 7, 2, 11, 0, 34, 15, 4, 13, 15, 10},
+	{7212, 10, 0, 7, 2, 11, 0, 35, 15, 4, 13, 15, 10},
+	{7135, 10, 0, 7, 2, 10, 0, 35, 15, 4, 13, 15, 10},
+	{7061, 10, 0, 7, 2, 10, 0, 36, 15, 4, 13, 15, 10},
+	{6988, 10, 0, 7, 2, 10, 0, 37, 15, 4, 13, 15, 10},
+	{6918, 10, 0, 7, 2, 10, 0, 38, 15, 4, 13, 15, 10},
+	{6850, 10, 0, 7, 2, 10, 0, 39, 15, 4, 13, 15, 10},
+	{6784, 10, 0, 7, 2, 10, 0, 39, 15, 4, 13, 15, 10},
+	{6720, 10, 0, 7, 2, 10, 0, 40, 15, 4, 13, 15, 10},
+	{6658, 10, 0, 7, 2, 9, 0, 41, 15, 4, 13, 15, 10},
+	{6597, 10, 0, 7, 2, 9, 0, 42, 15, 4, 13, 15, 10},
+	{6539, 10, 0, 7, 2, 9, 0, 43, 15, 4, 13, 15, 10},
+	{6482, 10, 0, 7, 2, 9, 0, 43, 15, 4, 13, 15, 10},
+	{6427, 10, 0, 7, 2, 9, 0, 44, 15, 4, 13, 15, 10},
+	{6373, 10, 0, 7, 3, 9, 0, 45, 15, 4, 13, 15, 10},
+	{6321, 10, 0, 7, 3, 9, 0, 46, 15, 4, 13, 15, 10},
+	{6270, 10, 0, 7, 3, 9, 0, 47, 15, 4, 13, 15, 10},
+	{6222, 10, 0, 7, 3, 9, 0, 47, 15, 4, 13, 15, 10},
+	{6174, 10, 0, 7, 3, 9, 0, 48, 15, 4, 13, 15, 10},
+	{6128, 10, 0, 7, 3, 9, 0, 49, 15, 4, 13, 15, 10},
+	{6083, 10, 0, 7, 3, 9, 0, 50, 15, 4, 13, 15, 10},
+	{6040, 10, 0, 7, 3, 9, 0, 51, 15, 4, 13, 15, 10},
+	{5997, 10, 0, 7, 3, 8, 0, 51, 15, 4, 13, 15, 10},
+}, {
+	{12605, 13, 0, 4, 0, 14, 0, 10, 13, 4, 13, 15, 9},   /* 80 MHz */
+	{12245, 13, 0, 4, 0, 13, 0, 11, 13, 4, 13, 15, 9},
+	{11906, 13, 0, 4, 0, 12, 0, 12, 13, 4, 13, 15, 9},
+	{11588, 13, 0, 4, 0, 12, 0, 13, 13, 4, 13, 15, 9},
+	{11288, 13, 0, 4, 0, 12, 0, 13, 13, 4, 13, 15, 9},
+	{11007, 13, 0, 4, 0, 11, 0, 14, 13, 4, 13, 15, 9},
+	{10742, 13, 0, 4, 0, 11, 0, 15, 13, 4, 13, 15, 9},
+	{10492, 13, 0, 5, 1, 11, 0, 16, 13, 4, 13, 15, 9},
+	{10258, 13, 0, 5, 1, 10, 0, 17, 13, 4, 13, 15, 9},
+	{10036, 13, 0, 5, 1, 10, 0, 17, 13, 4, 13, 15, 9},
+	{9827, 13, 0, 5, 1, 10, 0, 18, 13, 4, 13, 15, 9},
+	{9631, 13, 0, 5, 1, 10, 0, 19, 13, 4, 13, 15, 9},
+	{9445, 13, 0, 5, 1, 9, 0, 20, 13, 4, 13, 15, 9},
+	{9269, 10, 0, 6, 1, 12, 0, 18, 13, 4, 13, 15, 9},
+	{9103, 10, 0, 6, 1, 12, 0, 18, 13, 4, 13, 15, 9},
+	{8946, 10, 0, 6, 1, 11, 0, 19, 13, 4, 13, 15, 9},
+	{8797, 10, 0, 6, 1, 11, 0, 20, 13, 4, 13, 15, 9},
+	{8655, 10, 0, 6, 1, 11, 0, 20, 13, 4, 13, 15, 9},
+	{8520, 10, 0, 6, 1, 11, 0, 21, 13, 4, 13, 15, 9},
+	{8392, 10, 0, 6, 1, 11, 0, 22, 13, 4, 13, 15, 9},
+	{8269, 10, 0, 6, 1, 11, 0, 22, 13, 4, 13, 15, 9},
+	{8153, 10, 0, 6, 1, 11, 0, 23, 13, 4, 13, 15, 9},
+	{8041, 10, 0, 6, 1, 11, 0, 24, 13, 4, 13, 15, 9},
+	{7934, 10, 0, 6, 1, 11, 0, 25, 13, 4, 13, 15, 9},
+	{7831, 10, 0, 6, 1, 10, 0, 25, 13, 4, 13, 15, 9},
+	{7733, 10, 0, 6, 1, 10, 0, 26, 13, 4, 13, 15, 9},
+	{7638, 10, 0, 6, 1, 10, 0, 27, 13, 4, 13, 15, 9},
+	{7547, 10, 0, 6, 1, 10, 0, 27, 13, 4, 13, 15, 9},
+	{7459, 10, 0, 6, 1, 10, 0, 28, 13, 4, 13, 15, 9},
+	{7374, 10, 0, 7, 2, 10, 0, 29, 13, 4, 13, 15, 9},
+	{7291, 10, 0, 7, 2, 9, 0, 29, 13, 4, 13, 15, 9},
+	{7212, 10, 0, 7, 2, 9, 0, 30, 13, 4, 13, 15, 9},
+	{7135, 10, 0, 7, 2, 9, 0, 31, 13, 4, 13, 15, 9},
+	{7061, 10, 0, 7, 2, 9, 0, 32, 13, 4, 13, 15, 9},
+	{6988, 10, 0, 7, 2, 9, 0, 32, 13, 4, 13, 15, 9},
+	{6918, 10, 0, 7, 2, 9, 0, 33, 13, 4, 13, 15, 9},
+	{6850, 10, 0, 7, 2, 8, 0, 34, 13, 4, 13, 15, 9},
+	{6784, 10, 0, 7, 2, 8, 0, 34, 13, 4, 13, 15, 9},
+	{6720, 10, 0, 7, 2, 8, 0, 35, 13, 4, 13, 15, 9},
+	{6658, 10, 0, 7, 2, 8, 0, 36, 13, 4, 13, 15, 9},
+	{6597, 10, 0, 7, 2, 8, 0, 36, 13, 4, 13, 15, 9},
+	{6539, 10, 0, 7, 2, 8, 0, 37, 13, 4, 13, 15, 9},
+	{6482, 10, 0, 7, 2, 8, 0, 38, 13, 4, 13, 15, 9},
+	{6427, 10, 0, 7, 2, 7, 0, 39, 13, 4, 13, 15, 9},
+	{6373, 10, 0, 7, 3, 7, 0, 39, 13, 4, 13, 15, 9},
+	{6321, 10, 0, 7, 3, 7, 0, 40, 13, 4, 13, 15, 9},
+	{6270, 10, 0, 7, 3, 7, 0, 41, 13, 4, 13, 15, 9},
+	{6222, 10, 0, 7, 3, 7, 0, 41, 13, 4, 13, 15, 9},
+	{6174, 10, 0, 7, 3, 7, 0, 42, 13, 4, 13, 15, 9},
+	{6128, 10, 0, 7, 3, 7, 0, 43, 13, 4, 13, 15, 9},
+	{6083, 10, 0, 7, 3, 7, 0, 44, 13, 4, 13, 15, 9},
+	{6040, 10, 0, 7, 3, 6, 0, 44, 13, 4, 13, 15, 9},
+	{5997, 10, 0, 7, 3, 6, 0, 44, 13, 4, 13, 15, 9},
+}};
 
-enum {
-	ID_AD9361,
-	ID_AD9364,
-	ID_AD9361_2,
-};
+/* Rx Gain Tables */
 
-struct ad9361_rf_phy;
-struct ad9361_debugfs_entry {
-	struct ad9361_rf_phy *phy;
-	const char *propname;
-	void *out_value;
-	u32 val;
-	u8 size;
-	u8 cmd;
-};
+#define SIZE_FULL_TABLE		77
 
-struct ad9361_fastlock_entry {
-#define FASTLOOK_INIT	1
-	u8 flags;
-	u8 alc_orig;
-	u8 alc_written;
-};
+static const u8 full_gain_table[RXGAIN_TBLS_END][SIZE_FULL_TABLE][3] =
+{{  /* 800 MHz */
+	{0x00, 0x00, 0x20}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00},
+	{0x00, 0x01, 0x00}, {0x00, 0x02, 0x00}, {0x00, 0x03, 0x00},
+	{0x00, 0x04, 0x00}, {0x00, 0x05, 0x00}, {0x01, 0x03, 0x20},
+	{0x01, 0x04, 0x00}, {0x01, 0x05, 0x00}, {0x01, 0x06, 0x00},
+	{0x01, 0x07, 0x00}, {0x01, 0x08, 0x00}, {0x01, 0x09, 0x00},
+	{0x01, 0x0A, 0x00}, {0x01, 0x0B, 0x00}, {0x01, 0x0C, 0x00},
+	{0x01, 0x0D, 0x00}, {0x01, 0x0E, 0x00}, {0x02, 0x09, 0x20},
+	{0x02, 0x0A, 0x00}, {0x02, 0x0B, 0x00}, {0x02, 0x0C, 0x00},
+	{0x02, 0x0D, 0x00}, {0x02, 0x0E, 0x00}, {0x02, 0x0F, 0x00},
+	{0x02, 0x10, 0x00}, {0x02, 0x2B, 0x20}, {0x02, 0x2C, 0x00},
+	{0x04, 0x28, 0x20}, {0x04, 0x29, 0x00}, {0x04, 0x2A, 0x00},
+	{0x04, 0x2B, 0x00}, {0x24, 0x20, 0x20}, {0x24, 0x21, 0x00},
+	{0x44, 0x20, 0x20}, {0x44, 0x21, 0x00}, {0x44, 0x22, 0x00},
+	{0x44, 0x23, 0x00}, {0x44, 0x24, 0x00}, {0x44, 0x25, 0x00},
+	{0x44, 0x26, 0x00}, {0x44, 0x27, 0x00}, {0x44, 0x28, 0x00},
+	{0x44, 0x29, 0x00}, {0x44, 0x2A, 0x00}, {0x44, 0x2B, 0x00},
+	{0x44, 0x2C, 0x00}, {0x44, 0x2D, 0x00}, {0x44, 0x2E, 0x00},
+	{0x44, 0x2F, 0x00}, {0x44, 0x30, 0x00}, {0x44, 0x31, 0x00},
+	{0x44, 0x32, 0x00}, {0x64, 0x2E, 0x20}, {0x64, 0x2F, 0x00},
+	{0x64, 0x30, 0x00}, {0x64, 0x31, 0x00}, {0x64, 0x32, 0x00},
+	{0x64, 0x33, 0x00}, {0x64, 0x34, 0x00}, {0x64, 0x35, 0x00},
+	{0x64, 0x36, 0x00}, {0x64, 0x37, 0x00}, {0x64, 0x38, 0x00},
+	{0x65, 0x38, 0x20}, {0x66, 0x38, 0x20}, {0x67, 0x38, 0x20},
+	{0x68, 0x38, 0x20}, {0x69, 0x38, 0x20}, {0x6A, 0x38, 0x20},
+	{0x6B, 0x38, 0x20}, {0x6C, 0x38, 0x20}, {0x6D, 0x38, 0x20},
+	{0x6E, 0x38, 0x20}, {0x6F, 0x38, 0x20}
+},{  /* 2300 MHz */
+	{0x00, 0x00, 0x20}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00},
+	{0x00, 0x01, 0x00}, {0x00, 0x02, 0x00}, {0x00, 0x03, 0x00},
+	{0x00, 0x04, 0x00}, {0x00, 0x05, 0x00}, {0x01, 0x03, 0x20},
+	{0x01, 0x04, 0x00}, {0x01, 0x05, 0x00}, {0x01, 0x06, 0x00},
+	{0x01, 0x07, 0x00}, {0x01, 0x08, 0x00}, {0x01, 0x09, 0x00},
+	{0x01, 0x0A, 0x00}, {0x01, 0x0B, 0x00}, {0x01, 0x0C, 0x00},
+	{0x01, 0x0D, 0x00}, {0x01, 0x0E, 0x00}, {0x02, 0x09, 0x20},
+	{0x02, 0x0A, 0x00}, {0x02, 0x0B, 0x00}, {0x02, 0x0C, 0x00},
+	{0x02, 0x0D, 0x00}, {0x02, 0x0E, 0x00}, {0x02, 0x0F, 0x00},
+	{0x02, 0x10, 0x00}, {0x02, 0x2B, 0x20}, {0x02, 0x2C, 0x00},
+	{0x04, 0x27, 0x20}, {0x04, 0x28, 0x00}, {0x04, 0x29, 0x00},
+	{0x04, 0x2A, 0x00}, {0x04, 0x2B, 0x00}, {0x24, 0x21, 0x20},
+	{0x24, 0x22, 0x00}, {0x44, 0x20, 0x20}, {0x44, 0x21, 0x00},
+	{0x44, 0x22, 0x00}, {0x44, 0x23, 0x00}, {0x44, 0x24, 0x00},
+	{0x44, 0x25, 0x00}, {0x44, 0x26, 0x00}, {0x44, 0x27, 0x00},
+	{0x44, 0x28, 0x00}, {0x44, 0x29, 0x00}, {0x44, 0x2A, 0x00},
+	{0x44, 0x2B, 0x00}, {0x44, 0x2C, 0x00}, {0x44, 0x2D, 0x00},
+	{0x44, 0x2E, 0x00}, {0x44, 0x2F, 0x00}, {0x44, 0x30, 0x00},
+	{0x44, 0x31, 0x00}, {0x64, 0x2E, 0x20}, {0x64, 0x2F, 0x00},
+	{0x64, 0x30, 0x00}, {0x64, 0x31, 0x00}, {0x64, 0x32, 0x00},
+	{0x64, 0x33, 0x00}, {0x64, 0x34, 0x00}, {0x64, 0x35, 0x00},
+	{0x64, 0x36, 0x00}, {0x64, 0x37, 0x00}, {0x64, 0x38, 0x00},
+	{0x65, 0x38, 0x20}, {0x66, 0x38, 0x20}, {0x67, 0x38, 0x20},
+	{0x68, 0x38, 0x20}, {0x69, 0x38, 0x20}, {0x6A, 0x38, 0x20},
+	{0x6B, 0x38, 0x20}, {0x6C, 0x38, 0x20}, {0x6D, 0x38, 0x20},
+	{0x6E, 0x38, 0x20}, {0x6F, 0x38, 0x20},
+},{  /* 5500 MHz */
+	{0x00, 0x00, 0x20}, {0x00, 0x00, 0x00}, {0x00, 0x00, 0x00},
+	{0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}, {0x00, 0x01, 0x00},
+	{0x00, 0x02, 0x00}, {0x00, 0x03, 0x00}, {0x01, 0x01, 0x20},
+	{0x01, 0x02, 0x00}, {0x01, 0x03, 0x00}, {0x01, 0x04, 0x20},
+	{0x01, 0x05, 0x00}, {0x01, 0x06, 0x00}, {0x01, 0x07, 0x00},
+	{0x01, 0x08, 0x00}, {0x01, 0x09, 0x00}, {0x01, 0x0A, 0x00},
+	{0x01, 0x0B, 0x00}, {0x01, 0x0C, 0x00}, {0x02, 0x08, 0x20},
+	{0x02, 0x09, 0x00}, {0x02, 0x0A, 0x00}, {0x02, 0x0B, 0x20},
+	{0x02, 0x0C, 0x00}, {0x02, 0x0D, 0x00}, {0x02, 0x0E, 0x00},
+	{0x02, 0x0F, 0x00}, {0x02, 0x2A, 0x20}, {0x02, 0x2B, 0x00},
+	{0x04, 0x27, 0x20}, {0x04, 0x28, 0x00}, {0x04, 0x29, 0x00},
+	{0x04, 0x2A, 0x00}, {0x04, 0x2B, 0x00}, {0x04, 0x2C, 0x00},
+	{0x04, 0x2D, 0x00}, {0x24, 0x20, 0x20}, {0x24, 0x21, 0x00},
+	{0x24, 0x22, 0x00}, {0x44, 0x20, 0x20}, {0x44, 0x21, 0x00},
+	{0x44, 0x22, 0x00}, {0x44, 0x23, 0x00}, {0x44, 0x24, 0x00},
+	{0x44, 0x25, 0x00}, {0x44, 0x26, 0x00}, {0x44, 0x27, 0x00},
+	{0x44, 0x28, 0x00}, {0x44, 0x29, 0x00}, {0x44, 0x2A, 0x00},
+	{0x44, 0x2B, 0x00}, {0x44, 0x2C, 0x00}, {0x44, 0x2D, 0x00},
+	{0x44, 0x2E, 0x00}, {0x64, 0x2E, 0x20}, {0x64, 0x2F, 0x00},
+	{0x64, 0x30, 0x00}, {0x64, 0x31, 0x00}, {0x64, 0x32, 0x00},
+	{0x64, 0x33, 0x00}, {0x64, 0x34, 0x00}, {0x64, 0x35, 0x00},
+	{0x64, 0x36, 0x00}, {0x64, 0x37, 0x00}, {0x64, 0x38, 0x00},
+	{0x65, 0x38, 0x20}, {0x66, 0x38, 0x20}, {0x67, 0x38, 0x20},
+	{0x68, 0x38, 0x20}, {0x69, 0x38, 0x20}, {0x6A, 0x38, 0x20},
+	{0x6B, 0x38, 0x20}, {0x6C, 0x38, 0x20}, {0x6D, 0x38, 0x20},
+	{0x6E, 0x38, 0x20}, {0x6F, 0x38, 0x20}
+}};
 
-struct ad9361_fastlock {
-	u8 save_profile;
-	u8 current_profile[2];
-	struct ad9361_fastlock_entry entry[2][8];
-};
+#define SIZE_SPLIT_TABLE		41
 
-struct refclk_scale {
-	struct clk_hw		hw;
-	struct spi_device	*spi;
-	struct ad9361_rf_phy	*phy;
-	u32			mult;
-	u32			div;
-	enum ad9361_clocks 	source;
-};
+static const u8 split_gain_table[RXGAIN_TBLS_END][SIZE_SPLIT_TABLE][3] =
+{{  /* 800 MHz */
+	{0x00, 0x18, 0x20}, {0x00, 0x18, 0x00}, {0x00, 0x18, 0x00},
+	{0x00, 0x18, 0x00}, {0x00, 0x18, 0x00}, {0x00, 0x18, 0x00},
+	{0x00, 0x18, 0x20}, {0x01, 0x18, 0x20}, {0x02, 0x18, 0x20},
+	{0x04, 0x18, 0x20}, {0x04, 0x38, 0x20}, {0x05, 0x38, 0x20},
+	{0x06, 0x38, 0x20}, {0x07, 0x38, 0x20}, {0x08, 0x38, 0x20},
+	{0x09, 0x38, 0x20}, {0x0A, 0x38, 0x20}, {0x0B, 0x38, 0x20},
+	{0x0C, 0x38, 0x20}, {0x0D, 0x38, 0x20}, {0x0E, 0x38, 0x20},
+	{0x0F, 0x38, 0x20}, {0x24, 0x38, 0x20}, {0x25, 0x38, 0x20},
+	{0x44, 0x38, 0x20}, {0x45, 0x38, 0x20}, {0x46, 0x38, 0x20},
+	{0x47, 0x38, 0x20}, {0x48, 0x38, 0x20}, {0x64, 0x38, 0x20},
+	{0x65, 0x38, 0x20}, {0x66, 0x38, 0x20}, {0x67, 0x38, 0x20},
+	{0x68, 0x38, 0x20}, {0x69, 0x38, 0x20}, {0x6A, 0x38, 0x20},
+	{0x6B, 0x38, 0x20}, {0x6C, 0x38, 0x20}, {0x6D, 0x38, 0x20},
+	{0x6E, 0x38, 0x20}, {0x6F, 0x38, 0x20},
+},{  /* 2300 MHz */
+	{0x00, 0x18, 0x20}, {0x00, 0x18, 0x00}, {0x00, 0x18, 0x00},
+	{0x00, 0x18, 0x00}, {0x00, 0x18, 0x00}, {0x00, 0x18, 0x00},
+	{0x00, 0x18, 0x00}, {0x00, 0x18, 0x20}, {0x01, 0x18, 0x20},
+	{0x02, 0x18, 0x20}, {0x04, 0x18, 0x20}, {0x04, 0x38, 0x20},
+	{0x05, 0x38, 0x20}, {0x06, 0x38, 0x20}, {0x07, 0x38, 0x20},
+	{0x08, 0x38, 0x20}, {0x09, 0x38, 0x20}, {0x0A, 0x38, 0x20},
+	{0x0B, 0x38, 0x20}, {0x0C, 0x38, 0x20}, {0x0D, 0x38, 0x20},
+	{0x0E, 0x38, 0x20}, {0x0F, 0x38, 0x20}, {0x25, 0x38, 0x20},
+	{0x26, 0x38, 0x20}, {0x44, 0x38, 0x20}, {0x45, 0x38, 0x20},
+	{0x46, 0x38, 0x20}, {0x47, 0x38, 0x20}, {0x64, 0x38, 0x20},
+	{0x65, 0x38, 0x20}, {0x66, 0x38, 0x20}, {0x67, 0x38, 0x20},
+	{0x68, 0x38, 0x20}, {0x69, 0x38, 0x20}, {0x6A, 0x38, 0x20},
+	{0x6B, 0x38, 0x20}, {0x6C, 0x38, 0x20}, {0x6D, 0x38, 0x20},
+	{0x6E, 0x38, 0x20}, {0x6F, 0x38, 0x20},
+},{  /* 5500 MHz */
+	{0x00, 0x18, 0x20}, {0x00, 0x18, 0x00}, {0x00, 0x18, 0x00},
+	{0x00, 0x18, 0x00}, {0x00, 0x18, 0x00}, {0x00, 0x18, 0x00},
+	{0x00, 0x18, 0x00}, {0x00, 0x18, 0x00}, {0x00, 0x18, 0x00},
+	{0x00, 0x18, 0x00}, {0x01, 0x18, 0x20}, {0x02, 0x18, 0x20},
+	{0x04, 0x18, 0x20}, {0x04, 0x38, 0x20}, {0x05, 0x38, 0x20},
+	{0x06, 0x38, 0x20}, {0x07, 0x38, 0x20}, {0x08, 0x38, 0x20},
+	{0x09, 0x38, 0x20}, {0x0A, 0x38, 0x20}, {0x0B, 0x38, 0x20},
+	{0x0C, 0x38, 0x20}, {0x0D, 0x38, 0x20}, {0x0E, 0x38, 0x20},
+	{0x0F, 0x38, 0x20}, {0x62, 0x38, 0x20}, {0x25, 0x38, 0x20},
+	{0x26, 0x38, 0x20}, {0x44, 0x38, 0x20}, {0x64, 0x38, 0x20},
+	{0x65, 0x38, 0x20}, {0x66, 0x38, 0x20}, {0x67, 0x38, 0x20},
+	{0x68, 0x38, 0x20}, {0x69, 0x38, 0x20}, {0x6A, 0x38, 0x20},
+	{0x6B, 0x38, 0x20}, {0x6C, 0x38, 0x20}, {0x6D, 0x38, 0x20},
+	{0x6E, 0x38, 0x20}, {0x6F, 0x38, 0x20},
+}};
 
-struct ad9361_rf_phy {
-	struct spi_device 	*spi;
-	struct clk 		*clk_refin;
-	struct clk 		*clks[NUM_AD9361_CLKS];
-	struct refclk_scale	clk_priv[NUM_AD9361_CLKS];
-	struct clk_onecell_data	clk_data;
-	struct ad9361_phy_platform_data *pdata;
-	struct ad9361_debugfs_entry debugfs_entry[170];
-	struct bin_attribute 	bin;
-	struct iio_dev 		*indio_dev;
-	struct work_struct 	work;
-	struct completion       complete;
-	u32 			ad9361_debugfs_entry_index;
-	u8 			prev_ensm_state;
-	u8			curr_ensm_state;
-	struct rx_gain_info rx_gain[RXGAIN_TBLS_END];
-	enum rx_gain_table_name current_table;
-	bool 			ensm_pin_ctl_en;
+/* Mixer GM Sub-table */
 
-	bool			auto_cal_en;
-	u64			last_tx_quad_cal_freq;
-	u32			last_tx_quad_cal_phase;
-	unsigned long		flags;
-	unsigned long		cal_threshold_freq;
-	u32			current_rx_bw_Hz;
-	u32			current_tx_bw_Hz;
-	u32			rxbbf_div;
-	u32			rate_governor;
-	bool			bypass_rx_fir;
-	bool			bypass_tx_fir;
-	bool			rx_eq_2tx;
-	bool			filt_valid;
-	unsigned long		filt_rx_path_clks[NUM_RX_CLOCKS];
-	unsigned long		filt_tx_path_clks[NUM_TX_CLOCKS];
-	u32			filt_rx_bw_Hz;
-	u32			filt_tx_bw_Hz;
-	u8			tx_fir_int;
-	u8			tx_fir_ntaps;
-	u8			rx_fir_dec;
-	u8			rx_fir_ntaps;
-	u8			agc_mode[2];
-	bool			rfdc_track_en;
-	bool			bbdc_track_en;
-	bool			quad_track_en;
-	bool			txmon_tdd_en;
-	u16 			auxdac1_value;
-	u16 			auxdac2_value;
-	struct ad9361_fastlock	fastlock;
-};
+static const u8 gm_st_gain[16]= {0x78, 0x74, 0x70, 0x6C, 0x68, 0x64, 0x60,
+			 0x5C, 0x58, 0x54, 0x50, 0x4C, 0x48, 0x30, 0x18, 0x0};
+static const u8 gm_st_ctrl[16]= {0x0, 0xD, 0x15, 0x1B, 0x21, 0x25, 0x29,
+			 0x2C, 0x2F, 0x31, 0x33, 0x34, 0x35, 0x3A, 0x3D, 0x3E};
+
+
+static const s8 lna_table[RXGAIN_TBLS_END][4] = {
+	{5, 17, 19, 24}, {3, 14, 17, 21}, {-4, 10, 13, 14}};
+static const s8 tia_table[] = {-6, 0};
+static const s8 mixer_table[RXGAIN_TBLS_END][16] = {
+	{0, 3, 9, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25},
+	{0, 3, 9, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26},
+	{0, 3, 8, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24}};
 
 #define ad9361_check_debugfs_entry(phy,idx) \
 	BUG_ON((idx) >= ARRAY_SIZE(phy->debugfs_entry));
@@ -264,7 +620,7 @@ static int ad9361_spi_readm(struct spi_device *spi, u32 reg,
 	return 0;
 }
 
-static int ad9361_spi_read(struct spi_device *spi, u32 reg)
+int ad9361_spi_read(struct spi_device *spi, u32 reg)
 {
 	u8 buf;
 	int ret;
@@ -298,7 +654,7 @@ static int __ad9361_spi_readf(struct spi_device *spi, u32 reg,
 #define ad9361_spi_readf(spi, reg, mask) \
 	__ad9361_spi_readf(spi, reg, mask, __ffs(mask))
 
-static int ad9361_spi_write(struct spi_device *spi,
+int ad9361_spi_write(struct spi_device *spi,
 			 u32 reg, u32 val)
 {
 	u8 buf[3];
@@ -378,7 +734,7 @@ static int ad9361_spi_writem(struct spi_device *spi,
 	return 0;
 }
 
-static int ad9361_find_opt(u8 *field, u32 size, u32 *ret_start)
+int ad9361_find_opt(u8 *field, u32 size, u32 *ret_start)
 {
 	int i, cnt = 0, max_cnt = 0, start, max_start = 0;
 
@@ -416,58 +772,27 @@ static int ad9361_reset(struct ad9361_rf_phy *phy)
 		mdelay(1);
 		dev_dbg(&phy->spi->dev, "%s: by GPIO", __func__);
 		return 0;
-	} else {
-		ad9361_spi_write(phy->spi, REG_SPI_CONF, SOFT_RESET | _SOFT_RESET); /* RESET */
-		ad9361_spi_write(phy->spi, REG_SPI_CONF, 0x0);
-		dev_dbg(&phy->spi->dev, "%s: by SPI", __func__);
-		return 0;
 	}
 
-	return -ENODEV;
-}
-
-static int ad9361_hdl_loopback(struct ad9361_rf_phy *phy, bool enable)
-{
-	struct axiadc_converter *conv = spi_get_drvdata(phy->spi);
-	struct axiadc_state *st = iio_priv(conv->indio_dev);
-	unsigned reg, addr, chan;
-
-	unsigned version = axiadc_read(st, 0x4000);
-
-	/* Still there but implemented a bit different */
-	if (PCORE_VERSION_MAJOR(version) > 7)
-		addr = 0x4418;
-	else
-		addr = 0x4414;
+	/* SPI Soft Reset was removed from the register map, since it doesn't
+	 * work reliably. Without a prober HW reset randomness may happen.
+	 * Please specify a RESET GPIO.
+	 */
 
 	if ( ! conv->indio_dev ) {
 		dev_err(&phy->spi->dev, "No indio_dev: not run");
 		return -ENODEV;
 	}
 
-	for (chan = 0; chan < conv->chip_info->num_channels; chan++) {
-		reg = axiadc_read(st, addr + (chan) * 0x40);
+	ad9361_spi_write(phy->spi, REG_SPI_CONF, SOFT_RESET | _SOFT_RESET);
+	ad9361_spi_write(phy->spi, REG_SPI_CONF, 0x0);
+	dev_err(&phy->spi->dev,
+		 "%s: by SPI, this may cause unpredicted behavior!", __func__);
 
-		if (PCORE_VERSION_MAJOR(version) > 7) {
-		/* FIXME: May cause problems if DMA is selected */
-			if (enable)
-				reg = 0x8;
-			else
-				reg = 0x0;
-		} else {
-		/* DAC_LB_ENB If set enables loopback of receive data */
-			if (enable)
-				reg |= BIT(1);
-			else
-				reg &= ~BIT(1);
-		}
-		axiadc_write(st, addr + (chan) * 0x40, reg);
-	}
-
-	return 0;
+	return -ENODEV;
 }
 
-static int ad9361_bist_loopback(struct ad9361_rf_phy *phy, unsigned mode)
+int ad9361_bist_loopback(struct ad9361_rf_phy *phy, unsigned mode)
 {
 	u32 sp_hd, reg;
 
@@ -505,7 +830,7 @@ static int ad9361_bist_loopback(struct ad9361_rf_phy *phy, unsigned mode)
 	}
 }
 
-static int ad9361_bist_prbs(struct ad9361_rf_phy *phy, enum ad9361_bist_mode mode)
+int ad9361_bist_prbs(struct ad9361_rf_phy *phy, enum ad9361_bist_mode mode)
 {
 	u32 reg = 0;
 
@@ -566,69 +891,6 @@ static int ad9361_bist_tone(struct ad9361_rf_phy *phy,
 	ad9361_spi_write(phy->spi, REG_BIST_AND_DATA_PORT_TEST_CONFIG, reg1);
 
 	return ad9361_spi_write(phy->spi, REG_BIST_CONFIG, reg);
-}
-
-static ssize_t ad9361_dig_interface_timing_analysis(struct ad9361_rf_phy *phy,
-						   char *buf, unsigned buflen)
-{
-	struct axiadc_converter *conv = spi_get_drvdata(phy->spi);
-	struct axiadc_state *st = iio_priv(conv->indio_dev);
-	int ret, i, j, chan, len = 0;
-	u8 field[16][16];
-	u8 rx;
-
-	if ( ! conv->indio_dev ) {
-		len += snprintf(buf + len, buflen, "No indio_dev: not run\n");
-		return len;
-	}
-
-	rx = ad9361_spi_read(phy->spi, REG_RX_CLOCK_DATA_DELAY);
-
-	ad9361_bist_prbs(phy, BIST_INJ_RX);
-
-	for (i = 0; i < 16; i++) {
-		for (j = 0; j < 16; j++) {
-			ad9361_spi_write(phy->spi, REG_RX_CLOCK_DATA_DELAY,
-					DATA_CLK_DELAY(j) | RX_DATA_DELAY(i));
-			for (chan = 0; chan < 4; chan++)
-				axiadc_write(st, ADI_REG_CHAN_STATUS(chan),
-					ADI_PN_ERR | ADI_PN_OOS);
-
-			mdelay(1);
-
-			if (axiadc_read(st, ADI_REG_STATUS) & ADI_STATUS) {
-				for (chan = 0, ret = 0; chan < 4; chan++)
-					ret |= axiadc_read(st, ADI_REG_CHAN_STATUS(chan));
-			} else {
-				ret = 1;
-			}
-
-			field[i][j] = ret;
-		}
-	}
-
-	ad9361_spi_write(phy->spi, REG_RX_CLOCK_DATA_DELAY, rx);
-
-	ad9361_bist_prbs(phy, BIST_DISABLE);
-
-	len += snprintf(buf + len, buflen, "CLK: %lu Hz 'o' = PASS\n",
-		       clk_get_rate(phy->clks[RX_SAMPL_CLK]));
-	len += snprintf(buf + len, buflen, "DC");
-	for (i = 0; i < 16; i++)
-		len += snprintf(buf + len, buflen, "%x:", i);
-	len += snprintf(buf + len, buflen, "\n");
-
-	for (i = 0; i < 16; i++) {
-		len += snprintf(buf + len, buflen, "%x:", i);
-		for (j = 0; j < 16; j++) {
-			len += snprintf(buf + len, buflen, "%c ",
-					(field[i][j] ? '.' : 'o'));
-		}
-		len += snprintf(buf + len, buflen, "\n");
-	}
-	len += snprintf(buf + len, buflen, "\n");
-
-	return len;
 }
 
 static int ad9361_check_cal_done(struct ad9361_rf_phy *phy, u32 reg,
@@ -945,8 +1207,8 @@ static int ad9361_get_split_table_gain(struct ad9361_rf_phy *phy, u32 idx_reg,
 
 	rx_gain->tia_index = ad9361_spi_readf(spi, REG_GAIN_TABLE_READ_DATA2, TIA_GAIN);
 
-	rx_gain->lmt_gain = lna_table[rx_gain->lna_index] +
-				mixer_table[rx_gain->mixer_index] +
+	rx_gain->lmt_gain = lna_table[phy->current_table][rx_gain->lna_index] +
+				mixer_table[phy->current_table][rx_gain->mixer_index] +
 				tia_table[rx_gain->tia_index];
 
 	ad9361_spi_write(spi, REG_GAIN_TABLE_ADDRESS, tbl_addr);
@@ -1057,7 +1319,7 @@ out:
 	return rc;
 }
 
-static void ad9361_ensm_force_state(struct ad9361_rf_phy *phy, u8 ensm_state)
+void ad9361_ensm_force_state(struct ad9361_rf_phy *phy, u8 ensm_state)
 {
 	struct spi_device *spi = phy->spi;
 	struct device *dev = &phy->spi->dev;
@@ -1123,7 +1385,7 @@ out:
 
 }
 
-static void ad9361_ensm_restore_prev_state(struct ad9361_rf_phy *phy)
+void ad9361_ensm_restore_prev_state(struct ad9361_rf_phy *phy)
 {
 	struct spi_device *spi = phy->spi;
 	struct device *dev = &phy->spi->dev;
@@ -2248,20 +2510,24 @@ static int ad9361_tx_quad_calib(struct ad9361_rf_phy *phy,
 	ad9361_spi_write(spi, REG_QUAD_SETTLE_COUNT, 0xF0);
 	ad9361_spi_write(spi, REG_TX_QUAD_LPF_GAIN, 0x00);
 
-	ret = __ad9361_tx_quad_calib(phy, __rx_phase, rxnco_word, decim, &val);
+	if (rx_phase != -2) {
+		ret = __ad9361_tx_quad_calib(phy, __rx_phase, rxnco_word, decim, &val);
 
-	dev_dbg(dev, "LO leakage: %d Quadrature Calibration: %d : rx_phase %d\n",
-		!!(val & TX1_LO_CONV), !!(val & TX1_SSB_CONV), __rx_phase);
+		dev_dbg(dev, "LO leakage: %d Quadrature Calibration: %d : rx_phase %d\n",
+			!!(val & TX1_LO_CONV), !!(val & TX1_SSB_CONV), __rx_phase);
 
-	/* Calibration failed -> try last phase offset */
-	if (val != (TX1_LO_CONV | TX1_SSB_CONV)) {
-		if (phy->last_tx_quad_cal_phase < 31)
-			ret = __ad9361_tx_quad_calib(phy, phy->last_tx_quad_cal_phase,
-						     rxnco_word, decim, &val);
+		/* Calibration failed -> try last phase offset */
+		if (val != (TX1_LO_CONV | TX1_SSB_CONV)) {
+			if (phy->last_tx_quad_cal_phase < 31)
+				ret = __ad9361_tx_quad_calib(phy, phy->last_tx_quad_cal_phase,
+							rxnco_word, decim, &val);
+		} else {
+			phy->last_tx_quad_cal_phase = __rx_phase;
+		}
 	} else {
-		phy->last_tx_quad_cal_phase = __rx_phase;
+		/* force phase search */
+		val = 0;
 	}
-
 	/* Calibration failed -> loop through all 32 phase offsets */
 	if (val != (TX1_LO_CONV | TX1_SSB_CONV))
 		ret = ad9361_tx_quad_phase_search(phy, rxnco_word, decim);
@@ -3315,7 +3581,7 @@ static int ad9361_validate_trx_clock_chain(struct ad9361_rf_phy *phy,
 	return -EINVAL;
 }
 
-static int ad9361_set_trx_clock_chain(struct ad9361_rf_phy *phy,
+int ad9361_set_trx_clock_chain(struct ad9361_rf_phy *phy,
 				      unsigned long *rx_path_clks,
 				      unsigned long *tx_path_clks)
 {
@@ -3430,7 +3696,7 @@ static int ad9361_calculate_rf_clock_chain(struct ad9361_rf_phy *phy,
 		__func__, tx_sample_rate, tx_intdec, rx_intdec,
 		rate_gov ? "Nominal" : "Highest OSR");
 
-	if (tx_sample_rate > (phy->pdata->rx2tx2 ? 61440000UL : 122880000UL))
+	if (tx_sample_rate > 61440000UL)
 		return -EINVAL;
 
 	clktf = tx_sample_rate * tx_intdec;
@@ -3504,7 +3770,7 @@ static int ad9361_calculate_rf_clock_chain(struct ad9361_rf_phy *phy,
 	return 0;
 }
 
-static int ad9361_set_trx_clock_chain_freq(struct ad9361_rf_phy *phy,
+int ad9361_set_trx_clock_chain_freq(struct ad9361_rf_phy *phy,
 					  unsigned long freq)
 {
 	unsigned long rx[6], tx[6];
@@ -3517,7 +3783,7 @@ static int ad9361_set_trx_clock_chain_freq(struct ad9361_rf_phy *phy,
 	return ad9361_set_trx_clock_chain(phy, rx, tx);
 }
 
-static int ad9361_set_ensm_mode(struct ad9361_rf_phy *phy, bool fdd, bool pinctrl)
+int ad9361_set_ensm_mode(struct ad9361_rf_phy *phy, bool fdd, bool pinctrl)
 {
 	struct ad9361_phy_platform_data *pd = phy->pdata;
 	int ret;
@@ -3784,14 +4050,15 @@ static int ad9361_fastlock_save(struct ad9361_rf_phy *phy, bool tx,
 
 static int ad9361_mcs(struct ad9361_rf_phy *phy, unsigned step)
 {
-	unsigned mcs_mask = MCS_BBPLL_ENABLE | MCS_DIGITAL_CLK_ENABLE | MCS_BB_ENABLE;
+	unsigned mcs_mask = MCS_RF_ENABLE | MCS_BBPLL_ENABLE |
+		MCS_DIGITAL_CLK_ENABLE | MCS_BB_ENABLE;
 
 	dev_dbg(&phy->spi->dev, "%s: MCS step %d", __func__, step);
 
 	switch (step) {
 	case 1:
 		ad9361_spi_writef(phy->spi, REG_MULTICHIP_SYNC_AND_TX_MON_CTRL,
-			mcs_mask, MCS_BB_ENABLE | MCS_BBPLL_ENABLE);
+			mcs_mask, MCS_BB_ENABLE | MCS_BBPLL_ENABLE | MCS_RF_ENABLE);
 		ad9361_spi_writef(phy->spi, REG_CP_BLEED_CURRENT,
 			MCS_REFCLK_SCALE_EN, 1);
 		break;
@@ -3808,7 +4075,7 @@ static int ad9361_mcs(struct ad9361_rf_phy *phy, unsigned step)
 		break;
 	case 3:
 		ad9361_spi_writef(phy->spi, REG_MULTICHIP_SYNC_AND_TX_MON_CTRL,
-			mcs_mask, MCS_BB_ENABLE | MCS_DIGITAL_CLK_ENABLE);
+			mcs_mask, MCS_BB_ENABLE | MCS_DIGITAL_CLK_ENABLE | MCS_RF_ENABLE);
 		break;
 	case 4:
 		if (IS_ERR(phy->pdata->sync_gpio))
@@ -3819,11 +4086,8 @@ static int ad9361_mcs(struct ad9361_rf_phy *phy, unsigned step)
 	case 0:
 	case 5:
 		ad9361_spi_writef(phy->spi, REG_MULTICHIP_SYNC_AND_TX_MON_CTRL,
-			mcs_mask, 0);
+			mcs_mask, MCS_RF_ENABLE);
 		break;
-
-	case 6:
-		ad9361_dig_tune(phy, 0);
 	}
 
 	return 0;
@@ -3841,6 +4105,7 @@ static void ad9361_clear_state(struct ad9361_rf_phy *phy)
 	phy->prev_ensm_state = 0;
 	phy->curr_ensm_state = 0;
 	phy->auto_cal_en = false;
+	phy->manual_tx_quad_cal_en = false;
 	phy->last_tx_quad_cal_freq = 0;
 	phy->flags = 0;
 	phy->current_rx_bw_Hz = 0;
@@ -3921,6 +4186,9 @@ static int ad9361_setup(struct ad9361_rf_phy *phy)
 			DIGITAL_POWER_UP | CLOCK_ENABLE_DFLT | BBPLL_ENABLE |
 			(pd->use_extclk ? XO_BYPASS : 0)); /* Enable Clocks */
 
+	ret = clk_prepare_enable(phy->clk_refin);
+	if (ret < 0)
+		return ret;
 
 	ret = clk_set_rate(phy->clks[BB_REFCLK], ref_freq);
 	if (ret < 0) {
@@ -4182,9 +4450,11 @@ static int ad9361_update_rf_bandwidth(struct ad9361_rf_phy *phy,
 	phy->current_rx_bw_Hz = rf_rx_bw;
 	phy->current_tx_bw_Hz = rf_tx_bw;
 
-	ret = ad9361_tx_quad_calib(phy, rf_rx_bw / 2, rf_tx_bw / 2, -1);
-	if (ret < 0)
-		return ret;
+	if (phy->manual_tx_quad_cal_en == false) {
+		ret = ad9361_tx_quad_calib(phy, rf_rx_bw / 2, rf_tx_bw / 2, -1);
+		if (ret < 0)
+			return ret;
+	}
 
 	ret = ad9361_tracking_control(phy, phy->bbdc_track_en,
 			phy->rfdc_track_en, phy->quad_track_en);
@@ -4995,7 +5265,7 @@ static int ad9361_bbpll_set_rate(struct clk_hw *hw, unsigned long rate,
 	 * Scale is 150uA @ (1280MHz BBPLL, 40MHz REFCLK)
 	 */
 	tmp = (rate64 >> 7) * 150ULL;
-	do_div(tmp, (parent_rate >> 7) * 32UL + (tmp >> 1));
+	do_div(tmp, (parent_rate >> 7) * 32UL);
 
 	/* 25uA/LSB, Offset 25uA */
 	icp_val = DIV_ROUND_CLOSEST((u32)tmp, 25U) - 1;
@@ -5394,423 +5664,6 @@ static int register_clocks(struct ad9361_rf_phy *phy)
 	return 0;
 }
 
-#define AIM_CHAN(_chan, _si, _bits, _sign)			\
-	{ .type = IIO_VOLTAGE,						\
-	  .indexed = 1,							\
-	  .channel = _chan,						\
-	  .info_mask_separate = BIT(IIO_CHAN_INFO_CALIBSCALE) |		\
-			BIT(IIO_CHAN_INFO_CALIBBIAS) |			\
-			BIT(IIO_CHAN_INFO_CALIBPHASE),			\
-	  .info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SAMP_FREQ),	\
-	/*.ext_info = axiadc_ext_info,*/			\
-	  .scan_index = _si,						\
-	  .scan_type = {						\
-		.sign = _sign,						\
-		.realbits = _bits,					\
-		.storagebits = 16,					\
-		.shift = 0,						\
-	  },								\
-	}
-
-#define AIM_MC_CHAN(_chan, _si, _bits, _sign)			\
-	{ .type = IIO_VOLTAGE,						\
-	  .indexed = 1,							\
-	  .channel = _chan,						\
-	  .scan_index = _si,						\
-	  .scan_type = {						\
-		.sign = _sign,						\
-		.realbits = _bits,					\
-		.storagebits = 16,					\
-		.shift = 0,						\
-	  },								\
-	}
-
-
-static const unsigned long ad9361_2x2_available_scan_masks[] = {
-	0x01, 0x02, 0x04, 0x08, 0x03, 0x0C, /* 1 & 2 chan */
-	0x10, 0x20, 0x40, 0x80, 0x30, 0xC0, /* 1 & 2 chan */
-	0x33, 0xCC, 0xC3, 0x3C, 0x0F, 0xF0, /* 4 chan */
-	0xFF,				   /* 8 chan */
-	0x00,
-};
-
-static const unsigned long ad9361_available_scan_masks[] = {
-	0x01, 0x02, 0x04, 0x08, 0x03, 0x0C, 0x0F,
-	0x00,
-};
-
-static const struct axiadc_chip_info axiadc_chip_info_tbl[] = {
-	[ID_AD9361] = {
-		.name = "AD9361",
-		.max_rate = 61440000UL,
-		.max_testmode = 0,
-		.num_channels = 4,
-		.scan_masks = ad9361_available_scan_masks,
-		.channel[0] = AIM_CHAN(0, 0, 12, 'S'),
-		.channel[1] = AIM_CHAN(1, 1, 12, 'S'),
-		.channel[2] = AIM_CHAN(2, 2, 12, 'S'),
-		.channel[3] = AIM_CHAN(3, 3, 12, 'S'),
-	},
-	[ID_AD9361_2] = { /* MCS/MIMO 2x AD9361 */
-		.name = "AD9361-2",
-		.max_rate = 61440000UL,
-		.max_testmode = 0,
-		.num_channels = 8,
-		.num_shadow_slave_channels = 4,
-		.scan_masks = ad9361_2x2_available_scan_masks,
-		.channel[0] = AIM_CHAN(0, 0, 12, 'S'),
-		.channel[1] = AIM_CHAN(1, 1, 12, 'S'),
-		.channel[2] = AIM_CHAN(2, 2, 12, 'S'),
-		.channel[3] = AIM_CHAN(3, 3, 12, 'S'),
-		.channel[4] = AIM_MC_CHAN(4, 4, 12, 'S'),
-		.channel[5] = AIM_MC_CHAN(5, 5, 12, 'S'),
-		.channel[6] = AIM_MC_CHAN(6, 6, 12, 'S'),
-		.channel[7] = AIM_MC_CHAN(7, 7, 12, 'S'),
-	},
-	[ID_AD9364] = {
-		.name = "AD9361",
-		.max_rate = 122880000UL,
-		.max_testmode = 0,
-		.num_channels = 2,
-		.channel[0] = AIM_CHAN(0, 0, 12, 'S'),
-		.channel[1] = AIM_CHAN(1, 1, 12, 'S'),
-	},
-
-};
-
-static int ad9361_read_raw(struct iio_dev *indio_dev,
-			   struct iio_chan_spec const *chan,
-			   int *val,
-			   int *val2,
-			   long m)
-{
-	struct axiadc_converter *conv = iio_device_get_drvdata(indio_dev);
-
-	switch (m) {
-	case IIO_CHAN_INFO_SAMP_FREQ:
-		if (!conv->clk)
-			return -ENODEV;
-
-		*val = conv->adc_clk = clk_get_rate(conv->clk);
-
-		return IIO_VAL_INT;
-
-	}
-	return -EINVAL;
-}
-
-static int ad9361_write_raw(struct iio_dev *indio_dev,
-			       struct iio_chan_spec const *chan,
-			       int val,
-			       int val2,
-			       long mask)
-{
-	struct axiadc_converter *conv = iio_device_get_drvdata(indio_dev);
-	unsigned long r_clk;
-	int ret;
-
-	switch (mask) {
-	case IIO_CHAN_INFO_SAMP_FREQ:
-		if (!conv->clk)
-			return -ENODEV;
-
-		if (chan->extend_name)
-			return -ENODEV;
-
-		r_clk = clk_round_rate(conv->clk, val);
-		if (r_clk < 0 || r_clk > conv->chip_info->max_rate) {
-			dev_warn(&conv->spi->dev,
-				"Error setting ADC sample rate %ld", r_clk);
-			return -EINVAL;
-		}
-
-		ret = clk_set_rate(conv->clk, r_clk);
-		if (ret < 0)
-			return ret;
-
-		return 0;
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
-static int ad9361_dig_tune(struct ad9361_rf_phy *phy, unsigned long max_freq)
-{
-	struct axiadc_converter *conv = spi_get_drvdata(phy->spi);
-	struct axiadc_state *st = iio_priv(conv->indio_dev);
-	int ret, i, j, k, chan, t, num_chan, err = 0;
-	u32 s0, s1, c0, c1, tmp, saved = 0;
-	u8 field[2][16];
-	u32 saved_dsel[4], saved_chan_ctrl6[4];
-
-	unsigned hdl_dac_version = axiadc_read(st, 0x4000);
-
-	if (phy->pdata->dig_interface_tune_skipmode == 2) {
-	/* skip completely and use defaults */
-		ad9361_spi_write(phy->spi, REG_RX_CLOCK_DATA_DELAY,
-				phy->pdata->port_ctrl.rx_clk_data_delay);
-
-		ad9361_spi_write(phy->spi, REG_TX_CLOCK_DATA_DELAY,
-				phy->pdata->port_ctrl.tx_clk_data_delay);
-
-		return 0;
-	}
-
-	if (!phy->pdata->fdd) {
-		ad9361_set_ensm_mode(phy, true, false);
-		ad9361_ensm_force_state(phy, ENSM_STATE_FDD);
-	} else {
-		ad9361_ensm_force_state(phy, ENSM_STATE_ALERT);
-		ad9361_ensm_restore_prev_state(phy);
-	}
-
-	num_chan = (conv->chip_info->num_channels > 4) ? 4 : conv->chip_info->num_channels;
-
-	ad9361_bist_prbs(phy, BIST_INJ_RX);
-
-	for (t = 0; t < 2; t++) {
-		memset(field, 0, 32);
-		for (k = 0; k < 2; k++) {
-			if (max_freq)
-				ad9361_set_trx_clock_chain_freq(phy, k ? max_freq : 10000000UL);
-		for (i = 0; i < 2; i++) {
-			for (j = 0; j < 16; j++) {
-				ad9361_spi_write(phy->spi,
-						REG_RX_CLOCK_DATA_DELAY + t,
-						RX_DATA_DELAY(i == 0 ? j : 0) |
-						DATA_CLK_DELAY(i ? j : 0));
-				for (chan = 0; chan < num_chan; chan++)
-					axiadc_write(st, ADI_REG_CHAN_STATUS(chan),
-						ADI_PN_ERR | ADI_PN_OOS);
-				mdelay(4);
-
-				if ((t == 1) || (axiadc_read(st, ADI_REG_STATUS) & ADI_STATUS)) {
-					for (chan = 0, ret = 0; chan < num_chan; chan++) {
-						ret |= axiadc_read(st, ADI_REG_CHAN_STATUS(chan));
-					}
-				} else {
-					ret = 1;
-				}
-
-				field[i][j] |= ret;
-			}
-		}
-		}
-#ifdef _DEBUG
-		printk("SAMPL CLK: %lu\n", clk_get_rate(phy->clks[RX_SAMPL_CLK]));
-		printk("  ");
-		for (i = 0; i < 16; i++)
-			printk("%x:", i);
-		printk("\n");
-
-		for (i = 0; i < 2; i++) {
-			printk("%x:", i);
-			for (j = 0; j < 16; j++) {
-				printk("%c ", (field[i][j] ? '#' : 'o'));
-			}
-			printk("\n");
-		}
-		printk("\n");
-#endif
-		c0 = ad9361_find_opt(&field[0][0], 16, &s0);
-		c1 = ad9361_find_opt(&field[1][0], 16, &s1);
-
-		if (!c0 && !c1) {
-			dev_err(&phy->spi->dev, "%s: Tuning %s FAILED!", __func__,
-				t ? "TX" : "RX");
-			err |= -EIO;
-		}
-
-		if (c1 > c0)
-			ad9361_spi_write(phy->spi, REG_RX_CLOCK_DATA_DELAY + t,
-					DATA_CLK_DELAY(s1 + c1 / 2) |
-					RX_DATA_DELAY(0));
-		else
-			ad9361_spi_write(phy->spi, REG_RX_CLOCK_DATA_DELAY + t,
-					DATA_CLK_DELAY(0) |
-					RX_DATA_DELAY(s0 + c0 / 2));
-
-		if (t == 0) {
-			/* Now do the loopback and tune the digital out */
-
-			ad9361_bist_prbs(phy, BIST_DISABLE);
-
-			if (phy->pdata->dig_interface_tune_skipmode == 1) {
-			/* skip TX */
-
-				phy->pdata->port_ctrl.rx_clk_data_delay =
-					ad9361_spi_read(phy->spi, REG_RX_CLOCK_DATA_DELAY);
-
-				if (!phy->pdata->fdd) {
-					ad9361_set_ensm_mode(phy, phy->pdata->fdd,
-							     phy->pdata->ensm_pin_ctrl);
-					ad9361_ensm_restore_prev_state(phy);
-				}
-				return 0;
-			}
-
-			ad9361_bist_loopback(phy, 1);
-
-			for (chan = 0; chan < num_chan; chan++) {
-				axiadc_write(st, ADI_REG_CHAN_CNTRL(chan),
-					ADI_FORMAT_SIGNEXT | ADI_FORMAT_ENABLE |
-					ADI_ENABLE | ADI_IQCOR_ENB);
-				axiadc_set_pnsel(st, chan, ADC_PN_CUSTOM);
-				saved_chan_ctrl6[chan] = axiadc_read(st, 0x4414 + (chan) * 0x40);
-				if (PCORE_VERSION_MAJOR(hdl_dac_version) > 7) {
-					saved_dsel[chan] = axiadc_read(st, 0x4418 + (chan) * 0x40);
-					axiadc_write(st, 0x4418 + (chan) * 0x40, 9);
-					axiadc_write(st, 0x4414 + (chan) * 0x40, 0); /* !IQCOR_ENB */
-					axiadc_write(st, 0x4044, 1);
-				} else {
-					axiadc_write(st, 0x4414 + (chan) * 0x40, 1); /* DAC_PN_ENB */
-				}
-			}
-			if (PCORE_VERSION_MAJOR(hdl_dac_version) < 8) {
-				saved = tmp = axiadc_read(st, 0x4048);
-				tmp &= ~0xF;
-				tmp |= 1;
-				axiadc_write(st, 0x4048, tmp);
-
-			}
-		} else {
-			ad9361_bist_loopback(phy, 0);
-
-			if (PCORE_VERSION_MAJOR(hdl_dac_version) < 8)
-				axiadc_write(st, 0x4048, saved);
-
-			for (chan = 0; chan < num_chan; chan++) {
-				axiadc_write(st, ADI_REG_CHAN_CNTRL(chan),
-					ADI_FORMAT_SIGNEXT | ADI_FORMAT_ENABLE |
-					ADI_ENABLE | ADI_IQCOR_ENB);
-				axiadc_set_pnsel(st, chan, ADC_PN9);
-				if (PCORE_VERSION_MAJOR(hdl_dac_version) > 7) {
-					axiadc_write(st, 0x4418 + (chan) * 0x40, saved_dsel[chan]);
-					axiadc_write(st, 0x4044, 1);
-				}
-
-				axiadc_write(st, 0x4414 + (chan) * 0x40, saved_chan_ctrl6[chan]);
-			}
-
-			if (err == -EIO) {
-
-				ad9361_spi_write(phy->spi, REG_RX_CLOCK_DATA_DELAY,
-						phy->pdata->port_ctrl.rx_clk_data_delay);
-
-				ad9361_spi_write(phy->spi, REG_TX_CLOCK_DATA_DELAY,
-						phy->pdata->port_ctrl.tx_clk_data_delay);
-				err = 0;
-			} else {
-				phy->pdata->port_ctrl.rx_clk_data_delay =
-					ad9361_spi_read(phy->spi, REG_RX_CLOCK_DATA_DELAY);
-				phy->pdata->port_ctrl.tx_clk_data_delay =
-					ad9361_spi_read(phy->spi, REG_TX_CLOCK_DATA_DELAY);
-			}
-
-			if (!phy->pdata->fdd) {
-				ad9361_set_ensm_mode(phy, phy->pdata->fdd, phy->pdata->ensm_pin_ctrl);
-				ad9361_ensm_restore_prev_state(phy);
-			}
-
-			return err;
-		}
-	}
-
-	return -EINVAL;
-}
-
-static int ad9361_post_setup(struct iio_dev *indio_dev)
-{
-	struct axiadc_state *st = iio_priv(indio_dev);
-	struct axiadc_converter *conv = iio_device_get_drvdata(indio_dev);
-	struct ad9361_rf_phy *phy = conv->phy;
-	unsigned rx2tx2 = phy->pdata->rx2tx2;
-	unsigned tmp, num_chan;
-	int i, ret;
-
-	num_chan = (conv->chip_info->num_channels > 4) ? 4 : conv->chip_info->num_channels;
-
-	conv->indio_dev = indio_dev;
-	axiadc_write(st, ADI_REG_CNTRL, rx2tx2 ? 0 : ADI_R1_MODE);
-	tmp = axiadc_read(st, 0x4048);
-
-	if (!rx2tx2) {
-		axiadc_write(st, 0x4048, tmp | BIT(5)); /* R1_MODE */
-		axiadc_write(st, 0x404c, 1); /* RATE */
-	} else {
-		tmp &= ~BIT(5);
-		axiadc_write(st, 0x4048, tmp);
-		axiadc_write(st, 0x404c, 3); /* RATE */
-	}
-
-	for (i = 0; i < num_chan; i++) {
-		axiadc_write(st, ADI_REG_CHAN_CNTRL_1(i),
-			     ADI_DCFILT_OFFSET(0));
-		axiadc_write(st, ADI_REG_CHAN_CNTRL_2(i),
-			     (i & 1) ? 0x00004000 : 0x40000000);
-		axiadc_write(st, ADI_REG_CHAN_CNTRL(i),
-			     ADI_FORMAT_SIGNEXT | ADI_FORMAT_ENABLE |
-			     ADI_ENABLE | ADI_IQCOR_ENB);
-	}
-
-	ret = ad9361_dig_tune(phy, (axiadc_read(st, ADI_REG_ID)) ?
-		0 : 61440000);
-	if (ret < 0)
-		return ret;
-
-	ret = ad9361_set_trx_clock_chain(phy,
-					 phy->pdata->rx_path_clks,
-					 phy->pdata->tx_path_clks);
-
-	ad9361_ensm_force_state(phy, ENSM_STATE_ALERT);
-	ad9361_ensm_restore_prev_state(phy);
-
-	return ret;
-}
-
-static int ad9361_register_axi_converter(struct ad9361_rf_phy *phy)
-{
-	struct axiadc_converter *conv;
-	struct spi_device *spi = phy->spi;
-	int ret;
-
-	conv = devm_kzalloc(&spi->dev, sizeof(*conv), GFP_KERNEL);
-	if (conv == NULL)
-		return -ENOMEM;
-
-	conv->id = ad9361_spi_read(spi, REG_PRODUCT_ID) & PRODUCT_ID_MASK;
-	if (conv->id != PRODUCT_ID_9361) {
-		dev_err(&spi->dev, "Unrecognized CHIP_ID 0x%X\n", conv->id);
-  		ret = -ENODEV;
-  		goto out;
-	}
-
-	conv->chip_info = &axiadc_chip_info_tbl[
-		(spi_get_device_id(spi)->driver_data == ID_AD9361_2) ?
-		ID_AD9361_2 : phy->pdata->rx2tx2 ? ID_AD9361 : ID_AD9364];
-	conv->adc_output_mode = OUTPUT_MODE_TWOS_COMPLEMENT;
-	conv->write = ad9361_spi_write;
-	conv->read = ad9361_spi_read;
-	conv->write_raw = ad9361_write_raw;
-	conv->read_raw = ad9361_read_raw;
-	conv->post_setup = ad9361_post_setup;
-	conv->spi = spi;
-	conv->phy = phy;
-
-	conv->clk = phy->clks[RX_SAMPL_CLK];
-	conv->adc_clk = clk_get_rate(conv->clk);
-
-	spi_set_drvdata(spi, conv); /* Take care here */
-
-	return 0;
-out:
-	spi_set_drvdata(spi, NULL);
-	return ret;
-}
-
 enum ad9361_iio_dev_attr {
 	AD9361_RF_RX_BANDWIDTH,
 	AD9361_RF_TX_BANDWIDTH,
@@ -5962,12 +5815,17 @@ static ssize_t ad9361_phy_store(struct device *dev,
 		break;
 	case AD9361_CALIB_MODE:
 		val = 0;
-		if (sysfs_streq(buf, "auto"))
+		if (sysfs_streq(buf, "auto")) {
 			phy->auto_cal_en = true;
-		else if (sysfs_streq(buf, "manual"))
+			phy->manual_tx_quad_cal_en = false;
+		} else if (sysfs_streq(buf, "manual")) {
 			phy->auto_cal_en = false;
-		else if (!strncmp(buf, "tx_quad", 7)) {
-			ret = sscanf(buf, "tx_quad %u", &arg);
+			phy->manual_tx_quad_cal_en = false;
+		} else if (sysfs_streq(buf, "manual_tx_quad")) {
+			phy->auto_cal_en = false;
+			phy->manual_tx_quad_cal_en = true;
+		} else if (!strncmp(buf, "tx_quad", 7)) {
+			ret = sscanf(buf, "tx_quad %d", &arg);
 			if (ret != 1)
 				arg = -1;
 			val = TX_QUAD_CAL;
@@ -6096,10 +5954,13 @@ static ssize_t ad9361_phy_show(struct device *dev,
 		ret = sprintf(buf, "%d\n", !phy->bypass_tx_fir && !phy->bypass_rx_fir);
 		break;
 	case AD9361_CALIB_MODE_AVAIL:
-		ret = sprintf(buf, "auto manual tx_quad rf_dc_offs\n");
+		ret = sprintf(buf, "auto manual manual_tx_quad tx_quad rf_dc_offs\n");
 		break;
 	case AD9361_CALIB_MODE:
-		ret = sprintf(buf, "%s\n", phy->auto_cal_en ? "auto" : "manual");
+		if (phy->manual_tx_quad_cal_en)
+			ret = sprintf(buf, "manual_tx_quad %d\n", phy->last_tx_quad_cal_phase);
+		else
+			ret = sprintf(buf, "%s\n", phy->auto_cal_en ? "auto" : "manual");
 		break;
 	case AD9361_BBDC_OFFS_ENABLE:
 		ret = sprintf(buf, "%d\n", phy->bbdc_track_en);
@@ -7036,6 +6897,17 @@ static ssize_t ad9361_debugfs_write(struct file *file,
 
 		entry->val = val;
 		return count;
+	case DBGFS_DIGITAL_TUNE:
+		if (ret != 2)
+			return -EINVAL;
+		mutex_lock(&phy->indio_dev->mlock);
+		ret = ad9361_dig_tune(phy, val, val2);
+		mutex_unlock(&phy->indio_dev->mlock);
+		if (ret < 0)
+			return ret;
+
+		entry->val = val;
+		return count;
 	default:
 		break;
 	}
@@ -7104,6 +6976,7 @@ static int ad9361_register_debugfs(struct iio_dev *indio_dev)
 	ad9361_add_debugfs_entry(phy, "multichip_sync", DBGFS_MCS);
 	ad9361_add_debugfs_entry(phy, "calibration_switch_control",
 					 DBGFS_CAL_SW_CTRL);
+	ad9361_add_debugfs_entry(phy, "digital_tune", DBGFS_DIGITAL_TUNE);
 
 	for (i = 0; i < phy->ad9361_debugfs_entry_index; i++) {
 		ad9361_check_debugfs_entry(phy, i);
@@ -7876,8 +7749,7 @@ out_iio_device_free:
 
 static int ad9361_remove(struct spi_device *spi)
 {
-	struct axiadc_converter *conv = spi_get_drvdata(spi);
-	struct ad9361_rf_phy *phy = conv->phy;
+	struct ad9361_rf_phy *phy = ad9361_spi_to_phy(spi);
 
 	sysfs_remove_bin_file(&phy->indio_dev->dev.kobj, &phy->bin);
 	iio_device_unregister(phy->indio_dev);
