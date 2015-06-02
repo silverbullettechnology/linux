@@ -1,0 +1,101 @@
+/*
+ *  Copyright (C) 2015 Silver Bullet Technology
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+/dts-v1/;
+/* #include "s3ma.dtsi" */
+
+/ {
+	model = "Exelis S3MA SP3 Development Board";
+	compatible = "exelis,s3ma_sp3dev";
+
+	chosen {
+		bootargs = "console=ttyS0,115200";
+	};
+
+	memory {
+		name = "memory";
+		device_type = "memory";
+		reg = <0x0 0x40000000>; /* 1 GB */
+	};
+
+	soc {
+		clkmgr@ffd04000 {
+			clocks {
+				osc1 {
+					clock-frequency = <10000000>;
+				};
+			};
+		};
+
+		dwmmc0@ff704000 {
+			num-slots = <1>;
+			bus-width = <4>;
+			cap-mmc-highspeed;
+			cap-sd-highspeed;
+		};
+
+		timer0@080a3000 {
+			clock-frequency = <38400000>;
+		};
+
+		timer1@080a3400 {
+			clock-frequency = <38400000>;
+		};
+
+		timer2@ffd00800 {
+			clock-frequency = <38400000>;
+		};
+
+		serial0@80a1000 {
+			clock-frequency = <38400000>;
+		};
+
+		serial1@080a2000 {
+			clock-frequency = <38400000>;
+		};
+
+	};
+};
+
+&gpio1 {
+	status = "okay";
+};
+
+&i2c0 {
+	status = "okay";
+
+	eeprom@51 {
+		compatible = "atmel,24c32";
+		reg = <0x51>;
+		pagesize = <32>;
+	};
+
+	rtc@68 {
+		compatible = "dallas,ds1339";
+		reg = <0x68>;
+	};
+};
+
+&mmc0 {
+	cd-gpios = <&portb 18 0>;
+	vmmc-supply = <&regulator_3_3v>;
+	vqmmc-supply = <&regulator_3_3v>;
+};
+
+&usb1 {
+	status = "okay";
+};
