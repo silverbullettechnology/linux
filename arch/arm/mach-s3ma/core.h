@@ -35,4 +35,7 @@ extern struct smp_operations s3ma_smp_ops;
 #define S3MA_MRU_VIRT_BASE   0xf8002000
 #define S3MA_UART0_VIRT_BASE 0xf8004000
 
+extern void __iomem *s3ma_scu_base_addr;
+extern void __iomem *s3ma_mru_base_addr;
+
 #endif

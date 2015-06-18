@@ -20,16 +20,19 @@
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
 #include <linux/reboot.h>
+#include <linux/clk-provider.h>
+#include <linux/clocksource.h>
 
 #include <asm/hardware/cache-l2x0.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
+#include <asm/smp_scu.h>
 #include <mach/s3ma-regs.h>
 
-//#include "core.h"
+#include "core.h"
 
 void __iomem *s3ma_scu_base_addr = ((void __iomem *)(S3MA_SCU_VIRT_BASE));
-void __iomem *s3ma_mru_base_addr = ((void __iomem *)(S3MA_MRU_VIRT_BASE));;
+void __iomem *s3ma_mru_base_addr = ((void __iomem *)(S3MA_MRU_VIRT_BASE));
 
 static struct map_desc v2p_io_desc[] __initdata = {
 	{
@@ -81,7 +84,7 @@ static void __init s3ma_init_irq(void)
 
 static void __init s3ma_timer_init(void)
 {
-	zynq_clock_init();
+	//zynq_clock_init();
 	of_clk_init(NULL);
 	clocksource_of_init();
 }
@@ -99,7 +102,7 @@ static const char *s3ma_dt_match[] = {
 	NULL
 };
 
-DT_MACHINE_START(SOCFPGA, "Exelis S3MA SoC")
+DT_MACHINE_START(S3MA, "Exelis S3MA SoC")
 //	.l2c_aux_val	= 0,
 //	.l2c_aux_mask	= ~0,
 	.smp		= smp_ops(s3ma_smp_ops),

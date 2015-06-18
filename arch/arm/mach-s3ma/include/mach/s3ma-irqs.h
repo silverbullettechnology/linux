@@ -61,7 +61,8 @@
  *
  */
 
-#define S3MA_IRQ_BASE	0
+/* GIC Shared IRQ's start at 32 */
+#define S3MA_IRQ_BASE	32
 
 /* IRQ 0 */
 #define S3MA_CORE0_DCACHE_DATA_PARITY_IRQ   	(S3MA_IRQ_BASE + 0)
@@ -139,7 +140,7 @@
 #define S3MA_TIMER1_IRQ   						(S3MA_IRQ_BASE + 66)
 #define S3MA_TIMER2_IRQ   						(S3MA_IRQ_BASE + 67)
 #define S3MA_UART0_IRQ   						(S3MA_IRQ_BASE + 68)
-#define S3MA_UART0_IRQ   						(S3MA_IRQ_BASE + 69)
+#define S3MA_UART1_IRQ   						(S3MA_IRQ_BASE + 69)
 /* IRQ 70 */
 #define S3MA_I2C_IRQ   							(S3MA_IRQ_BASE + 70)
 #define S3MA_USB0_IRQ   						(S3MA_IRQ_BASE + 71)
