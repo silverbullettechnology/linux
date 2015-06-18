@@ -49,7 +49,7 @@ static struct map_desc v2p_io_desc[] __initdata = {
 		.length		= SZ_4K,
 		.type		= MT_DEVICE,
 	},
-#if 0
+#if 1
 	{
 		.virtual	= S3MA_UART0_VIRT_BASE,
 		.pfn		= __phys_to_pfn(UART0_APB_ABSOLUTE_BASE),
