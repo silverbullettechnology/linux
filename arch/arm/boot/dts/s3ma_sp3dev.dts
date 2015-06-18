@@ -16,6 +16,7 @@
  */
 
 /dts-v1/;
+#include <dt-bindings/gpio/gpio.h>
 #include "s3ma.dtsi"
 
 / {
@@ -32,19 +33,20 @@
 		reg = <0x0 0x40000000>; /* 1 GB */
 	};
 	
-	leds {
+	gpio-leds {
         compatible = "gpio-leds";
+
         user0 {
             label = "sp3:green:user0";
-            gpios = <&gpio2 5 GPIO_ACTIVE_HIGH>; /* 21 */
+            gpios = <&gpio2 5 GPIO_ACTIVE_HIGH>;
         };
         user1 {
             label = "sp3:red:user0";
-            gpios = <&gpio2 6 GPIO_ACTIVE_HIGH>; /* 22 */
+            gpios = <&gpio2 6 GPIO_ACTIVE_HIGH>;
         };
         user2 {
             label = "sp3:red:user1";
-            gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>; /* 4 */
+            gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
         };
     };
 };
@@ -77,11 +79,13 @@
     flash: m25p80@0 {
         #address-cells = <1>;
         #size-cells = <1>;
-        compatible = "sst,sst25vf032b", "m25p80";
+        compatible = "sst,sst25vf032b", "st,m25p80";
         spi-max-frequency = <20000000>;
         reg = <0>;
     };
     dac: ltc2640@1 {
+        #address-cells = <1>;
+        #size-cells = <1>;
         spi-max-frequency = <20000000>;
         reg = <1>;
     };

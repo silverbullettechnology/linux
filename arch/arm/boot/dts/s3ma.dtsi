@@ -81,13 +81,13 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 	
-			osc {
+			osc: oscillator {
 				compatible = "fixed-clock";
 				#clock-cells = <0>;
 				clock-frequency = <38400000>;
                 clock-output-names = "osc";
 			};
-			plla_clk {
+			plla_clk: plla_clk {
 				compatible = "fixed-factor-clock";
 				#clock-cells = <0>;
 				clocks = <&osc>;
@@ -95,7 +95,7 @@
 				clock-div = <3>;
                 clock-output-names = "plla_clk";
 			};
-			pllb_clk {
+			pllb_clk: pllb_clk {
 				compatible = "fixed-factor-clock";
 				#clock-cells = <0>;
 				clocks = <&osc>;
@@ -103,7 +103,7 @@
 				clock-div = <4>;
                 clock-output-names = "pllb_clk";
 			};
-			plla_div2_clk {
+			plla_div2_clk: plla_div2_clk {
 				compatible = "fixed-factor-clock";
 				#clock-cells = <0>;
 				clocks = <&plla_clk>;
@@ -111,7 +111,7 @@
 				clock-div = <2>;
                 clock-output-names = "plla_div2_clk";
 			};
-			plla_div4_clk {
+			plla_div4_clk: plla_div4_clk {
 				compatible = "fixed-factor-clock";
 				#clock-cells = <0>;
 				clocks = <&plla_clk>;
@@ -119,7 +119,7 @@
 				clock-div = <4>;
                 clock-output-names = "plla_div4_clk";
 			};
-			plla_div5_clk {
+			plla_div5_clk: plla_div5_clk {
 				compatible = "fixed-factor-clock";
 				#clock-cells = <0>;
 				clocks = <&plla_clk>;
@@ -127,7 +127,7 @@
 				clock-div = <5>;
                 clock-output-names = "plla_div5_clk";
 			};
-			plla_div8_clk {
+			plla_div8_clk: plla_div8_clk {
 				compatible = "fixed-factor-clock";
 				#clock-cells = <0>;
 				clocks = <&plla_clk>;
@@ -135,7 +135,7 @@
 				clock-div = <8>;
                 clock-output-names = "plla_div8_clk";
 			};
-			plla_div16_clk {
+			plla_div16_clk: plla_div16_clk {
 				compatible = "fixed-factor-clock";
 				#clock-cells = <0>;
 				clocks = <&plla_clk>;
@@ -143,7 +143,7 @@
 				clock-div = <16>;
                 clock-output-names = "plla_div16_clk";
 			};			
-			plla_div20_clk {
+			plla_div20_clk: plla_div20_clk {
 				compatible = "fixed-factor-clock";
 				#clock-cells = <0>;
 				clocks = <&plla_clk>;
@@ -151,7 +151,7 @@
 				clock-div = <20>;
                 clock-output-names = "plla_div20_clk";
 			};
-			plla_div40_clk {
+			plla_div40_clk: plla_div40_clk {
 				compatible = "fixed-factor-clock";
 				#clock-cells = <0>;
 				clocks = <&plla_clk>;
@@ -160,17 +160,17 @@
                 clock-output-names = "plla_div40_clk";
 			};
 			/* Generate the module clocks */
-			arm_cpu_clk {
+			arm_cpu_clk: arm_cpu_clk {
 				#clock-cells = <0>;
 				clocks = <&plla_clk>;
                 clock-output-names = "arm_cpu_clk";
 			};
-			arm_periph_clk {
+			arm_periph_clk: arm_periph_clk {
 				#clock-cells = <0>;
 				clocks = <&plla_div2_clk>;
                 clock-output-names = "arm_periph_clk";
 			};
-			apb_clk {
+			apb_clk: apb_clk {
 				#clock-cells = <0>;
 				clocks = <&plla_div4_clk>;
                 clock-output-names = "apb_clk";
@@ -214,41 +214,41 @@
 
         ssp0: ssp@080A4000 {
             compatible = "arm,pl022", "arm,primecell";
-            reg = <080A4000 0x1000>;
+            reg = <0x080A4000 0x1000>;
             interrupts = <92>;
-            clocks = <&apb_pclk>, <&apb_clk>;
+            clocks = <&apb_clk>, <&apb_clk>;
             clock-names = "SSPCLK", "apb_pclk";
         };
 
         ssp1: ssp@080A5000 {
             compatible = "arm,pl022", "arm,primecell";
-            reg = <080A5000 0x1000>;
+            reg = <0x080A5000 0x1000>;
             interrupts = <93>;
-            clocks = <&apb_pclk>, <&apb_clk>;
+            clocks = <&apb_clk>, <&apb_clk>;
             clock-names = "SSPCLK", "apb_pclk";
         };
 
         ssp2: ssp@080A6000 {
             compatible = "arm,pl022", "arm,primecell";
-            reg = <080A6000 0x1000>;
+            reg = <0x080A6000 0x1000>;
             interrupts = <94>;
-            clocks = <&apb_pclk>, <&apb_clk>;
+            clocks = <&apb_clk>, <&apb_clk>;
             clock-names = "SSPCLK", "apb_pclk";
         };
                 
         ssp3: ssp@080A7000 {
             compatible = "arm,pl022", "arm,primecell";
-            reg = <080A7000 0x1000>;
+            reg = <0x080A7000 0x1000>;
             interrupts = <95>;
-            clocks = <&apb_pclk>, <&apb_clk>;
+            clocks = <&apb_clk>, <&apb_clk>;
             clock-names = "SSPCLK", "apb_pclk";
         };
                 
         ssp4: ssp@080A8000 {
             compatible = "arm,pl022", "arm,primecell";
-            reg = <080A8000 0x1000>;
+            reg = <0x080A8000 0x1000>;
             interrupts = <96>;
-            clocks = <&apb_pclk>, <&apb_clk>;
+            clocks = <&apb_clk>, <&apb_clk>;
             clock-names = "SSPCLK", "apb_pclk";
         };
                                 
@@ -339,7 +339,7 @@
             status = "okay";
             bus-width = <4>;   
             max-frequency = <48000000>;    
-            reg = <080D0000 0x1000>;
+            reg = <0x080D0000 0x1000>;
             interrupts = <0 105  4>;
             interrupt-parent = <&intc>;
             /* clocks = <&clkc 21>, <&clkc 32>; */
@@ -420,7 +420,7 @@
 
 		usb1: usb@08040000 {
 			compatible = "snps,dwc2";
-			reg = <08040000 0xffff>;
+			reg = <0x08040000 0xffff>;
 			interrupts = <0 104 4>;
 			clocks = <&apb_clk>;
 			clock-names = "otg";
