@@ -19,17 +19,20 @@
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
+#include <linux/clk-provider.h>
+#include <linux/clocksource.h>
 #include <linux/reboot.h>
 
 #include <asm/hardware/cache-l2x0.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
+#include <asm/smp_scu.h>
 #include <mach/s3ma-regs.h>
 
-//#include "core.h"
+#include "core.h"
 
 void __iomem *s3ma_scu_base_addr = ((void __iomem *)(S3MA_SCU_VIRT_BASE));
-void __iomem *s3ma_mru_base_addr = ((void __iomem *)(S3MA_MRU_VIRT_BASE));;
+void __iomem *s3ma_mru_base_addr = ((void __iomem *)(S3MA_MRU_VIRT_BASE));
 
 static struct map_desc v2p_io_desc[] __initdata = {
 	{
@@ -68,7 +71,7 @@ static void __init s3ma_scu_map_io(void)
 static void __init s3ma_map_io(void)
 {
 	s3ma_scu_map_io();
-	iotable_init(&v2p_io_desc, ARRAY_SIZE(v2p_io_desc));
+	iotable_init(v2p_io_desc, ARRAY_SIZE(v2p_io_desc));
 	debug_ll_io_init();
 	early_printk("Early printk initialized\n");
 }
@@ -79,9 +82,9 @@ static void __init s3ma_init_irq(void)
 	irqchip_init();
 }
 
-static void __init s3ma_timer_init(void)
+// May use to override default kernel time_init
+void __init s3ma_time_init(void)
 {
-	zynq_clock_init();
 	of_clk_init(NULL);
 	clocksource_of_init();
 }

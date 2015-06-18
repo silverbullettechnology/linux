@@ -20,9 +20,10 @@
 #ifndef __MACH_CORE_H
 #define __MACH_CORE_H
 
+#include <mach/s3ma-regs.h>
 
 extern void s3ma_secondary_startup(void);
-extern void __iomem *socfpga_scu_base_addr;
+extern void __iomem *s3ma_scu_base_addr;
 
 extern void s3ma_init_clocks(void);
 extern void s3ma_mcu_init(void);

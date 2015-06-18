@@ -23,11 +23,11 @@
 #include <linux/platform_device.h>
 #include <linux/genalloc.h>
 
-#include "common.h"
+#include "core.h"
 
-#define S3MA_OCM_ADDR	0x04000000
+#define S3MA_OCM_ADDR	(OCM_S_ABSOLUTE_BASE)	
 #define S3MA_OCM_BLOCK_SIZE	0x10000
-#define S3MA_OCM_BLOCKS		8
+#define S3MA_OCM_BLOCKS		8 /* Use 1/2 of OCM */
 #define S3MA_OCM_GRANULARITY	32
 
 
@@ -52,7 +52,6 @@ static int s3ma_ocm_probe(struct platform_device *pdev)
 	int ret;
 	struct s3ma_ocm_dev *s3ma_ocm;
 	u32 i, curr;
-	struct resource *res;
 
 	s3ma_ocm = devm_kzalloc(&pdev->dev, sizeof(*s3ma_ocm), GFP_KERNEL);
 	if (!s3ma_ocm)
