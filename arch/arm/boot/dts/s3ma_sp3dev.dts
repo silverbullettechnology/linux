@@ -16,14 +16,14 @@
  */
 
 /dts-v1/;
-/* #include "s3ma.dtsi" */
+#include "s3ma.dtsi"
 
 / {
 	model = "Exelis S3MA SP3 Development Board";
 	compatible = "exelis,s3ma_sp3dev";
 
 	chosen {
-		bootargs = "console=ttyS0,115200";
+		bootargs = "console=ttyAMA0,115200";
 	};
 
 	memory {
@@ -31,69 +31,65 @@
 		device_type = "memory";
 		reg = <0x0 0x40000000>; /* 1 GB */
 	};
+	
+	leds {
+        compatible = "gpio-leds";
+        user0 {
+            label = "sp3:green:user0";
+            gpios = <&gpio2 5 GPIO_ACTIVE_HIGH>; /* 21 */
+        };
+        user1 {
+            label = "sp3:red:user0";
+            gpios = <&gpio2 6 GPIO_ACTIVE_HIGH>; /* 22 */
+        };
+        user2 {
+            label = "sp3:red:user1";
+            gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>; /* 4 */
+        };
+    };
+};
 
-	soc {
-		clkmgr@ffd04000 {
-			clocks {
-				osc1 {
-					clock-frequency = <10000000>;
-				};
-			};
-		};
-
-		dwmmc0@ff704000 {
-			num-slots = <1>;
-			bus-width = <4>;
-			cap-mmc-highspeed;
-			cap-sd-highspeed;
-		};
-
-		timer0@080a3000 {
-			clock-frequency = <38400000>;
-		};
-
-		timer1@080a3400 {
-			clock-frequency = <38400000>;
-		};
-
-		timer2@ffd00800 {
-			clock-frequency = <38400000>;
-		};
-
-		serial0@80a1000 {
-			clock-frequency = <38400000>;
-		};
-
-		serial1@080a2000 {
-			clock-frequency = <38400000>;
-		};
-
-	};
+&gpio0 {
+	status = "okay";
 };
 
 &gpio1 {
 	status = "okay";
 };
 
+&gpio2 {
+	status = "okay";
+};
+
 &i2c0 {
 	status = "okay";
 
-	eeprom@51 {
-		compatible = "atmel,24c32";
-		reg = <0x51>;
-		pagesize = <32>;
-	};
-
-	rtc@68 {
-		compatible = "dallas,ds1339";
+    /* TBD */
+	max31725@68 {
+		compatible = "maxim,max31725";
 		reg = <0x68>;
 	};
 };
 
-&mmc0 {
-	cd-gpios = <&portb 18 0>;
-	vmmc-supply = <&regulator_3_3v>;
-	vqmmc-supply = <&regulator_3_3v>;
+&ssp0 {
+    fsl,spi-num-chipselects = <2>;
+    cs-gpios = <&gpio0 3 0>, <&gpio0 7 0>;
+    flash: m25p80@0 {
+        #address-cells = <1>;
+        #size-cells = <1>;
+        compatible = "sst,sst25vf032b", "m25p80";
+        spi-max-frequency = <20000000>;
+        reg = <0>;
+    };
+    dac: ltc2640@1 {
+        spi-max-frequency = <20000000>;
+        reg = <1>;
+    };
+    
+};
+
+&usb0 {
+	status = "okay";
 };
 
 &usb1 {

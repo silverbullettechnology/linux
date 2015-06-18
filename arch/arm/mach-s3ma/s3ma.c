@@ -22,6 +22,8 @@
 #include <linux/clk-provider.h>
 #include <linux/clocksource.h>
 #include <linux/reboot.h>
+#include <linux/clk-provider.h>
+#include <linux/clocksource.h>
 
 #include <asm/hardware/cache-l2x0.h>
 #include <asm/mach/arch.h>
@@ -102,7 +104,7 @@ static const char *s3ma_dt_match[] = {
 	NULL
 };
 
-DT_MACHINE_START(SOCFPGA, "Exelis S3MA SoC")
+DT_MACHINE_START(S3MA, "Exelis S3MA SoC")
 //	.l2c_aux_val	= 0,
 //	.l2c_aux_mask	= ~0,
 	.smp		= smp_ops(s3ma_smp_ops),
