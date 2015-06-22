@@ -16,6 +16,8 @@
  */
 
 #include "skeleton.dtsi"
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/gpio/gpio.h>
 
 / {
 	#address-cells = <1>;
@@ -24,9 +26,8 @@
 	aliases {
 		serial0 = &uart0;
 		serial1 = &uart1;
-		timer0 = &timer0;
-		timer1 = &timer1;
-		timer2 = &timer2;
+		timer0 = &timer01;
+		timer1 = &timer01;
 	};
 
 	cpus {
@@ -170,10 +171,10 @@
 				clocks = <&plla_div2_clk>;
                 clock-output-names = "arm_periph_clk";
 			};
-			apb_clk: apb_clk {
+			apb_pclk: apb_pclk {
 				#clock-cells = <0>;
 				clocks = <&plla_div4_clk>;
-                clock-output-names = "apb_clk";
+                clock-output-names = "apb_pclk";
 			};
 		};
 	
@@ -197,7 +198,7 @@
 				#dma-cells = <1>;
 				#dma-channels = <8>;
 				#dma-requests = <16>;
-				clocks = <&apb_clk>;
+				clocks = <&apb_pclk>;
 				clock-names = "apb_pclk";
 			};
 		};
@@ -207,7 +208,7 @@
 			#size-cells = <0>;
 			compatible = "snps,designware-i2c";
 			reg = <0xffc04000 0x1000>;
-			clocks = <&apb_clk>;
+			clocks = <&apb_pclk>;
 			interrupts = <0 102 0x4>;
 			status = "disabled";
 		};
@@ -216,7 +217,7 @@
             compatible = "arm,pl022", "arm,primecell";
             reg = <0x080A4000 0x1000>;
             interrupts = <92>;
-            clocks = <&apb_clk>, <&apb_clk>;
+            clocks = <&apb_pclk>, <&apb_pclk>;
             clock-names = "SSPCLK", "apb_pclk";
         };
 
@@ -224,7 +225,7 @@
             compatible = "arm,pl022", "arm,primecell";
             reg = <0x080A5000 0x1000>;
             interrupts = <93>;
-            clocks = <&apb_clk>, <&apb_clk>;
+            clocks = <&apb_pclk>, <&apb_pclk>;
             clock-names = "SSPCLK", "apb_pclk";
         };
 
@@ -232,7 +233,7 @@
             compatible = "arm,pl022", "arm,primecell";
             reg = <0x080A6000 0x1000>;
             interrupts = <94>;
-            clocks = <&apb_clk>, <&apb_clk>;
+            clocks = <&apb_pclk>, <&apb_pclk>;
             clock-names = "SSPCLK", "apb_pclk";
         };
                 
@@ -240,7 +241,7 @@
             compatible = "arm,pl022", "arm,primecell";
             reg = <0x080A7000 0x1000>;
             interrupts = <95>;
-            clocks = <&apb_clk>, <&apb_clk>;
+            clocks = <&apb_pclk>, <&apb_pclk>;
             clock-names = "SSPCLK", "apb_pclk";
         };
                 
@@ -248,7 +249,7 @@
             compatible = "arm,pl022", "arm,primecell";
             reg = <0x080A8000 0x1000>;
             interrupts = <96>;
-            clocks = <&apb_clk>, <&apb_clk>;
+            clocks = <&apb_pclk>, <&apb_pclk>;
             clock-names = "SSPCLK", "apb_pclk";
         };
                                 
@@ -257,7 +258,7 @@
 			#size-cells = <0>;
 			compatible = "snps,dw-apb-gpio";
 			reg = <0x080a9000 0x1000>;
-			clocks = <&apb_clk>;
+			clocks = <&apb_pclk>;
 			status = "disabled";
 
 			porta: gpio-controller@0 {
@@ -277,7 +278,7 @@
 			#size-cells = <0>;
 			compatible = "snps,dw-apb-gpio";
 			reg = <0x080aa000 0x1000>;
-			clocks = <&apb_clk>;
+			clocks = <&apb_pclk>;
 			status = "disabled";
 
 			portb: gpio-controller@0 {
@@ -297,7 +298,7 @@
 			#size-cells = <0>;
 			compatible = "snps,dw-apb-gpio";
 			reg = <0x080ab000 0x1000>;
-			clocks = <&apb_clk>;
+			clocks = <&apb_pclk>;
 			status = "disabled";
 
 			portc: gpio-controller@0 {
@@ -347,42 +348,27 @@
         };
 
 		/* Local timer */
-		timer@3be00200 {
+		timer: timer@3be00200 {
 			compatible = "arm,cortex-a9-twd-timer";
 			reg = <0x3be00200 0x100>;
 			interrupts = <1 13 0xf04>;
 			clocks = <&arm_periph_clk>;
 		};
 
-		timer0: timer0@080A3000 {
-			compatible = "snps,dw-apb-timer";
-			interrupts = <0 167 4>;
-			reg = <0x080A3000 0x400>;
-			clocks = <&apb_clk>;
-			clock-names = "timer";
-		};
-
-		timer1: timer1@080A3400 {
-			compatible = "snps,dw-apb-timer";
-			interrupts = <0 97 4>;
-			reg = <0x080A3400 0x400>;
-			clocks = <&apb_clk>;
-			clock-names = "timer";
-		};
-
-		timer2: timer2@080A3800 {
-			compatible = "snps,dw-apb-timer";
-			interrupts = <0 98 4>;
-			reg = <0x080A3800 0x400>;
-			clocks = <&apb_clk>;
-			clock-names = "timer";
-		};
+		/* Primecell timers */
+		timer01: timer@080A3000 {
+			compatible = "arm,sp804", "arm,primecell";
+			reg = <0x080A3000 0x1000>;
+			interrupts = <0 98 IRQ_TYPE_LEVEL_HIGH>, <0 99 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&apb_pclk>, <&apb_pclk>, <&apb_pclk>;
+			clock-names = "timer1", "timer2", "apb_pclk";
+        };
 
         uart0: uart@080A1000 {
             compatible = "arm,pl011", "arm,primecell";
             reg = <0x080A1000 0x1000>;
             interrupts = <100>;
-            clocks = <&osc>, <&apb_clk>;
+            clocks = <&osc>, <&apb_pclk>;
             clock-names = "uartclk", "apb_pclk";
         };
 
@@ -390,7 +376,7 @@
             compatible = "arm,pl011", "arm,primecell";
             reg = <0x080A2000 0x1000>;
             interrupts = <101>;
-            clocks = <&osc>, <&apb_clk>;
+            clocks = <&osc>, <&apb_pclk>;
             clock-names = "uartclk", "apb_pclk";
         };
 
@@ -404,7 +390,7 @@
 			compatible = "snps,dwc2";
 			reg = <0x08000000 0xffff>;
 			interrupts = <0 103 4>;
-			clocks = <&apb_clk>;
+			clocks = <&apb_pclk>;
 			clock-names = "otg";
 			phys = <&usbphy0>;
 			phy-names = "usb2-phy";
@@ -422,7 +408,7 @@
 			compatible = "snps,dwc2";
 			reg = <0x08040000 0xffff>;
 			interrupts = <0 104 4>;
-			clocks = <&apb_clk>;
+			clocks = <&apb_pclk>;
 			clock-names = "otg";
 			phys = <&usbphy1>;
 			phy-names = "usb2-phy";
@@ -434,7 +420,7 @@
             compatible = "arm,sp805", "arm,primecell";
 			reg = <0x080B0000 0x1000>;
 			interrupts = <0 171 4>;
-			clocks = <&osc>, <&apb_clk>;
+			clocks = <&osc>, <&apb_pclk>;
 			clock-names = "wdogclk", "apb_pclk";
 		};
 
