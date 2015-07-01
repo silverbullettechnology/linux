@@ -17,6 +17,8 @@
 
 /dts-v1/;
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
 #include "s3ma.dtsi"
 
 / {
@@ -49,6 +51,17 @@
             gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
         };
     };
+    test: remoteproc-test@0 {
+	    compatible = "exelis,s3ma_remoteproc";
+	    reg = < 0x0 0x10000000 >;
+	    interrupt-parent = <&intc>;
+	    /* 101 - UART1, 98 - timer0 */
+	    /* interrupts = < 0 101 IRQ_TYPE_LEVEL_HIGH 0 98 IRQ_TYPE_LEVEL_HIGH>; */
+	    firmware = "freertos";
+	    ipino = <5>;
+	    vring0 = <2>;
+	    vring1 = <3>;
+	} ;
 };
 
 &gpio0 {

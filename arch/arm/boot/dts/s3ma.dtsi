@@ -313,19 +313,6 @@
 			};
 		};
 
-/***
-		sdr: sdr@ffc25000 {
-			compatible = "syscon";
-			reg = <0xffc25000 0x1000>;
-		};
-
-		sdramedac {
-			compatible = "altr,sdram-edac";
-			altr,sdr-syscon = <&sdr>;
-			interrupts = <0 39 4>;
-		};
-**/
-
 		L2: l2-cache@080d1000 {
 			compatible = "arm,pl310-cache";
 			reg = <0x080d1000 0x1000>;
@@ -424,11 +411,5 @@
 			clock-names = "wdogclk", "apb_pclk";
 		};
 
-/**
-		sysmgr: sysmgr@ffd08000 {
-			compatible = "altr,sys-mgr", "syscon";
-			reg = <0xffd08000 0x4000>;
-		};
-**/
 	};
 };

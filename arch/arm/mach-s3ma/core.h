@@ -22,21 +22,23 @@
 
 #include <mach/s3ma-regs.h>
 
-extern void s3ma_secondary_startup(void);
 extern void __iomem *s3ma_scu_base_addr;
+extern void __iomem *s3ma_mru_base_addr;
 
 extern void s3ma_init_clocks(void);
 extern void s3ma_mcu_init(void);
 
-extern void __iomem *mcu_base_addr;
-
+#ifdef CONFIG_SMP
+extern void s3ma_secondary_startup(void);
+extern char s3ma_secondary_trampoline;
+extern char s3ma_secondary_trampoline_jump;
+extern char s3ma_secondary_trampoline_end;
+extern int s3ma_cpun_start(u32 address, int cpu);
 extern struct smp_operations s3ma_smp_ops;
+#endif
 
 #define S3MA_SCU_VIRT_BASE   0xf8000000
 #define S3MA_MRU_VIRT_BASE   0xf8002000
 #define S3MA_UART0_VIRT_BASE 0xf8004000
-
-extern void __iomem *s3ma_scu_base_addr;
-extern void __iomem *s3ma_mru_base_addr;
 
 #endif
