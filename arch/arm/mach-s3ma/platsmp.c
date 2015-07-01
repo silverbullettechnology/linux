@@ -106,7 +106,7 @@ static int s3ma_boot_secondary(unsigned int cpu, struct task_struct *idle)
  */
 static void __init s3ma_smp_init_cpus(void)
 {
-	unsigned int i, ncores;
+	unsigned int i;
 
 	ncores = scu_get_core_count(s3ma_scu_base_addr);
 
