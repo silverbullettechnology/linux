@@ -91,15 +91,12 @@
     fsl,spi-num-chipselects = <2>;
     cs-gpios = <&gpio0 3 0>, <&gpio0 7 0>;
     flash: m25p80@0 {
-        #address-cells = <1>;
-        #size-cells = <1>;
         compatible = "sst,sst25vf032b", "st,m25p80";
         spi-max-frequency = <20000000>;
         reg = <0>;
     };
     dac: ltc2640@1 {
-        #address-cells = <1>;
-        #size-cells = <1>;
+        compatible = "ltc,ltc2640";
         spi-max-frequency = <20000000>;
         reg = <1>;
     };
