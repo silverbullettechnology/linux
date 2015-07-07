@@ -62,7 +62,7 @@
 	
 	/* Add PMU */
 
-	intc: intc@3be01000 {
+	intc: interrupt-controller@3be01000 {
 		compatible = "arm,cortex-a9-gic";
 		#interrupt-cells = <3>;
 		interrupt-controller;
@@ -86,7 +86,7 @@
 				compatible = "fixed-clock";
 				#clock-cells = <0>;
 				clock-frequency = <38400000>;
-                clock-output-names = "osc";
+                /* clock-output-names = "osc"; */
 			};
 			plla_clk: plla_clk {
 				compatible = "fixed-factor-clock";
@@ -94,7 +94,7 @@
 				clocks = <&osc>;
 				clock-mult = <60>;
 				clock-div = <3>;
-                clock-output-names = "plla_clk";
+                /* clock-output-names = "plla_clk"; */
 			};
 			pllb_clk: pllb_clk {
 				compatible = "fixed-factor-clock";
@@ -102,7 +102,7 @@
 				clocks = <&osc>;
 				clock-mult = <60>;
 				clock-div = <4>;
-                clock-output-names = "pllb_clk";
+                /* clock-output-names = "pllb_clk"; */
 			};
 			plla_div2_clk: plla_div2_clk {
 				compatible = "fixed-factor-clock";
@@ -110,7 +110,7 @@
 				clocks = <&plla_clk>;
 				clock-mult = <1>;
 				clock-div = <2>;
-                clock-output-names = "plla_div2_clk";
+                /* clock-output-names = "plla_div2_clk"; */
 			};
 			plla_div4_clk: plla_div4_clk {
 				compatible = "fixed-factor-clock";
@@ -118,7 +118,7 @@
 				clocks = <&plla_clk>;
 				clock-mult = <1>;
 				clock-div = <4>;
-                clock-output-names = "plla_div4_clk";
+                /* clock-output-names = "plla_div4_clk"; */
 			};
 			plla_div5_clk: plla_div5_clk {
 				compatible = "fixed-factor-clock";
@@ -126,7 +126,7 @@
 				clocks = <&plla_clk>;
 				clock-mult = <1>;
 				clock-div = <5>;
-                clock-output-names = "plla_div5_clk";
+                /* clock-output-names = "plla_div5_clk"; */
 			};
 			plla_div8_clk: plla_div8_clk {
 				compatible = "fixed-factor-clock";
@@ -134,7 +134,7 @@
 				clocks = <&plla_clk>;
 				clock-mult = <1>;
 				clock-div = <8>;
-                clock-output-names = "plla_div8_clk";
+                /* clock-output-names = "plla_div8_clk"; */
 			};
 			plla_div16_clk: plla_div16_clk {
 				compatible = "fixed-factor-clock";
@@ -142,7 +142,7 @@
 				clocks = <&plla_clk>;
 				clock-mult = <1>;
 				clock-div = <16>;
-                clock-output-names = "plla_div16_clk";
+                /* clock-output-names = "plla_div16_clk"; */
 			};			
 			plla_div20_clk: plla_div20_clk {
 				compatible = "fixed-factor-clock";
@@ -150,7 +150,7 @@
 				clocks = <&plla_clk>;
 				clock-mult = <1>;
 				clock-div = <20>;
-                clock-output-names = "plla_div20_clk";
+                /* clock-output-names = "plla_div20_clk"; */
 			};
 			plla_div40_clk: plla_div40_clk {
 				compatible = "fixed-factor-clock";
@@ -158,23 +158,29 @@
 				clocks = <&plla_clk>;
 				clock-mult = <1>;
 				clock-div = <40>;
-                clock-output-names = "plla_div40_clk";
+                /* clock-output-names = "plla_div40_clk"; */
 			};
 			/* Generate the module clocks */
 			arm_cpu_clk: arm_cpu_clk {
+				compatible = "fixed-factor-clock";
 				#clock-cells = <0>;
 				clocks = <&plla_clk>;
-                clock-output-names = "arm_cpu_clk";
+				clock-mult = <1>;
+				clock-div = <1>;
 			};
 			arm_periph_clk: arm_periph_clk {
+				compatible = "fixed-factor-clock";
 				#clock-cells = <0>;
 				clocks = <&plla_div2_clk>;
-                clock-output-names = "arm_periph_clk";
+				clock-mult = <1>;
+				clock-div = <1>;
 			};
 			apb_pclk: apb_pclk {
+				compatible = "fixed-factor-clock";
 				#clock-cells = <0>;
 				clocks = <&plla_div4_clk>;
-                clock-output-names = "apb_pclk";
+				clock-mult = <1>;
+				clock-div = <1>;
 			};
 		};
 	
@@ -214,6 +220,8 @@
 		};
 
         ssp0: ssp@080A4000 {
+            #address-cells = <1>;
+            #size-cells = <0>;
             compatible = "arm,pl022", "arm,primecell";
             reg = <0x080A4000 0x1000>;
             interrupts = <92>;
@@ -222,6 +230,8 @@
         };
 
         ssp1: ssp@080A5000 {
+            #address-cells = <1>;
+            #size-cells = <0>;
             compatible = "arm,pl022", "arm,primecell";
             reg = <0x080A5000 0x1000>;
             interrupts = <93>;
@@ -230,6 +240,8 @@
         };
 
         ssp2: ssp@080A6000 {
+            #address-cells = <1>;
+            #size-cells = <0>;
             compatible = "arm,pl022", "arm,primecell";
             reg = <0x080A6000 0x1000>;
             interrupts = <94>;
@@ -238,6 +250,8 @@
         };
                 
         ssp3: ssp@080A7000 {
+            #address-cells = <1>;
+            #size-cells = <0>;
             compatible = "arm,pl022", "arm,primecell";
             reg = <0x080A7000 0x1000>;
             interrupts = <95>;
@@ -246,6 +260,8 @@
         };
                 
         ssp4: ssp@080A8000 {
+            #address-cells = <1>;
+            #size-cells = <0>;
             compatible = "arm,pl022", "arm,primecell";
             reg = <0x080A8000 0x1000>;
             interrupts = <96>;
@@ -346,15 +362,14 @@
 		timer01: timer@080A3000 {
 			compatible = "arm,sp804", "arm,primecell";
 			reg = <0x080A3000 0x1000>;
-			interrupts = <0 98 IRQ_TYPE_LEVEL_HIGH>, <0 99 IRQ_TYPE_LEVEL_HIGH>;
+			interrupts = <0 65 IRQ_TYPE_LEVEL_HIGH>, <0 66 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&apb_pclk>, <&apb_pclk>, <&apb_pclk>;
 			clock-names = "timer1", "timer2", "apb_pclk";
         };
-
         uart0: uart@080A1000 {
             compatible = "arm,pl011", "arm,primecell";
             reg = <0x080A1000 0x1000>;
-            interrupts = <100>;
+            interrupts = <68>;
             clocks = <&osc>, <&apb_pclk>;
             clock-names = "uartclk", "apb_pclk";
         };
@@ -362,7 +377,7 @@
         uart1: uart@080A2000 {
             compatible = "arm,pl011", "arm,primecell";
             reg = <0x080A2000 0x1000>;
-            interrupts = <101>;
+            interrupts = <69>;
             clocks = <&osc>, <&apb_pclk>;
             clock-names = "uartclk", "apb_pclk";
         };
