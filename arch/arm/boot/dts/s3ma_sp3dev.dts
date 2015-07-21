@@ -104,15 +104,13 @@
 };
 
 &usb0 {
-	status = "okay";
+	status = "disabled";
+	sbt,force-ulpi;
 };
 
 &usb1 {
-	status = "disabled";
-};
-
-&usbphy1 {
-	status = "disabled";
+	status = "okay";
+	sbt,force-ulpi;
 };
 
 &timer {
@@ -122,3 +120,4 @@
 &pdma {
 	status = "disabled";
 };
+

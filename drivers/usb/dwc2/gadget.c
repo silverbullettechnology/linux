@@ -2290,7 +2290,7 @@ void s3c_hsotg_core_init_disconnected(struct dwc2_hsotg *hsotg,
 	 */
 
 	/* set the PLL on, remove the HNP/SRP and set the PHY */
-	val = (hsotg->phyif == GUSBCFG_PHYIF8) ? 9 : 5;
+	val = (hsotg->phyif & GUSBCFG_PHYIF16) ? 5 : 9;
 	writel(hsotg->phyif | GUSBCFG_TOUTCAL(7) |
 	       (val << GUSBCFG_USBTRDTIM_SHIFT), hsotg->regs + GUSBCFG);
 
@@ -3004,7 +3004,7 @@ static void s3c_hsotg_init(struct dwc2_hsotg *hsotg)
 	s3c_hsotg_init_fifo(hsotg);
 
 	/* set the PLL on, remove the HNP/SRP and set the PHY */
-	trdtim = (hsotg->phyif == GUSBCFG_PHYIF8) ? 9 : 5;
+	trdtim = (hsotg->phyif & GUSBCFG_PHYIF16) ? 5 : 9;
 	writel(hsotg->phyif | GUSBCFG_TOUTCAL(7) |
 		(trdtim << GUSBCFG_USBTRDTIM_SHIFT),
 		hsotg->regs + GUSBCFG);
@@ -3886,6 +3886,11 @@ int dwc2_gadget_init(struct dwc2_hsotg *hsotg, int irq)
 		if (phy_get_bus_width(hsotg->phy) == 8)
 			hsotg->phyif = GUSBCFG_PHYIF8;
 	}
+
+#ifdef CONFIG_OF
+	if ( of_property_read_bool(hsotg->dev->of_node, "sbt,force-ulpi") )
+		hsotg->phyif |= GUSBCFG_ULPI_UTMI_SEL;
+#endif
 
 	hsotg->clk = devm_clk_get(dev, "otg");
 	if (IS_ERR(hsotg->clk)) {
