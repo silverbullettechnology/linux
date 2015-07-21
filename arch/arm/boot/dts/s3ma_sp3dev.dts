@@ -108,5 +108,17 @@
 };
 
 &usb1 {
-	status = "okay";
+	status = "disabled";
+};
+
+&usbphy1 {
+	status = "disabled";
+};
+
+&timer {
+	status = "disabled";
+};
+
+&pdma {
+	status = "disabled";
 };
