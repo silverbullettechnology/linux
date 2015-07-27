@@ -104,7 +104,7 @@
 };
 
 &usb0 {
-	status = "disabled";
+	status = "okay";
 	sbt,force-ulpi;
 };
 

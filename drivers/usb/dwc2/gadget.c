@@ -2031,8 +2031,9 @@ static void s3c_hsotg_epint(struct dwc2_hsotg *hsotg, unsigned int idx,
 		}
 
 		/* this probably means something bad is happening */
+		/* EXPERIMENTAL: ignore DIEPMSK_INTKNEPMISMSK by changing dev_warn to dev_dbg */
 		if (ints & DIEPMSK_INTKNEPMISMSK) {
-			dev_warn(hsotg->dev, "%s: ep%d: INTknEP\n",
+			dev_dbg(hsotg->dev, "%s: ep%d: INTknEP\n",
 				 __func__, idx);
 		}
 
