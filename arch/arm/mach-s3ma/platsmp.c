@@ -39,21 +39,22 @@ static int ncores;
 
 int s3ma_cpun_start(u32 address, int cpu)
 {
-	u32 trampoline_code_size = &s3ma_secondary_trampoline_end -
-						&s3ma_secondary_trampoline;
+	u32  size = (&s3ma_secondary_trampoline_end  - &s3ma_secondary_trampoline) / 4;
+	u32  jump = (&s3ma_secondary_trampoline_jump - &s3ma_secondary_trampoline) / 4;
+	u32  buff[size + 1] __attribute__((aligned(__alignof__(u64))));
+	u32  word;
 
 	/* MS: Expectation that SLCR are directly map and accessible */
 	/* Not possible to jump to non aligned address */
-	if (!(address & 3) && (!address || (address >= trampoline_code_size))) {
+	if ( !(address & 3) ) {
 		/* Store pointer to ioremap area which points to address 0x0 */
-		static u8 __iomem *zero;
-		u32 trampoline_size = &s3ma_secondary_trampoline_jump -
-						&s3ma_secondary_trampoline;
+		static void  __iomem *zero;
+		volatile u64 __iomem *write;
 
 		// TODO: halt cpu n in reset, assume for now its in WFI
 		if (address) {
 			if (__pa(PAGE_OFFSET)) {
-				zero = ioremap(0, trampoline_code_size);
+				zero = ioremap(0, size * 4);
 				if (!zero) {
 					pr_warn("BOOTUP jump vectors not accessible\n");
 					return -1;
@@ -61,6 +62,7 @@ int s3ma_cpun_start(u32 address, int cpu)
 			} else {
 				zero = (__force u8 __iomem *)PAGE_OFFSET;
 			}
+			write = (u64 __iomem *)zero;
 
 			/*
 			* This is elegant way how to jump to any address
@@ -68,17 +70,23 @@ int s3ma_cpun_start(u32 address, int cpu)
 			* 0x4: Jump by mov instruction
 			* 0x8: Jumping address
 			*/
-			memcpy((__force void *)zero, &s3ma_secondary_trampoline,
-							trampoline_size);
-			writel(address, zero + trampoline_size);
+			/* On S3MA ASIC the reset vector is in 64-bit OCM so setup the trampoline code
+			 * and jump address in a stack buffer and use 64-bit writes to copy */
+			memcpy(buff, &s3ma_secondary_trampoline, size * 4);
+			buff[jump] = address;
+			for ( word = 0; word < size; word += 2 ) {
+				u64  tmp = *((u64 *)&buff[word]);
+				*write++ = tmp;
+			}
 
 			flush_cache_all();
-			outer_flush_range(0, trampoline_code_size);
+			outer_flush_range(0, sizeof(buff));
 			smp_wmb();
 
 			if (__pa(PAGE_OFFSET))
 				iounmap(zero);
 		}
+
 		// TODO: restart cpu n in reset
 		// Currently assumes that after wfi instruction the core will reset to 0
 		arch_send_wakeup_ipi_mask(cpumask_of(cpu));
@@ -94,10 +102,7 @@ EXPORT_SYMBOL(s3ma_cpun_start);
 
 static int s3ma_boot_secondary(unsigned int cpu, struct task_struct *idle)
 {
-	/* Send an interrupt to the core to wake it.  Assumes its sitting in WFI */
-	arch_send_wakeup_ipi_mask(cpumask_of(cpu));
-
-	return 0;
+	return s3ma_cpun_start(virt_to_phys(s3ma_secondary_startup), cpu);
 }
 
 /*

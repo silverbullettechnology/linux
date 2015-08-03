@@ -22,7 +22,7 @@ ARM_BE8(rev	r0, r0)
 .globl s3ma_secondary_trampoline_jump
 s3ma_secondary_trampoline_jump:
 	/* Space for jumping address */
-	.word	/* cpu 1 */
+	.word 0 /* cpu 1 */
 .globl s3ma_secondary_trampoline_end
 s3ma_secondary_trampoline_end:
 ENDPROC(s3ma_secondary_trampoline)
