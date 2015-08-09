@@ -213,10 +213,9 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 			compatible = "snps,designware-i2c";
-			reg = <0xffc04000 0x1000>;
+			reg = <0x080a0000 0x1000>;
 			clocks = <&apb_pclk>;
-			interrupts = <0 102 0x4>;
-			status = "disabled";
+			interrupts = <0 70 0x4>;
 		};
 
         ssp0: ssp@080A4000 {
@@ -224,7 +223,7 @@
             #size-cells = <0>;
             compatible = "arm,pl022", "arm,primecell";
             reg = <0x080A4000 0x1000>;
-            interrupts = <92>;
+            interrupts = <0 60 4>;
             clocks = <&apb_pclk>, <&apb_pclk>;
             clock-names = "SSPCLK", "apb_pclk";
         };
@@ -234,7 +233,7 @@
             #size-cells = <0>;
             compatible = "arm,pl022", "arm,primecell";
             reg = <0x080A5000 0x1000>;
-            interrupts = <93>;
+            interrupts = <0 61 4>;
             clocks = <&apb_pclk>, <&apb_pclk>;
             clock-names = "SSPCLK", "apb_pclk";
         };
@@ -244,7 +243,7 @@
             #size-cells = <0>;
             compatible = "arm,pl022", "arm,primecell";
             reg = <0x080A6000 0x1000>;
-            interrupts = <94>;
+            interrupts = <0 62 4>;
             clocks = <&apb_pclk>, <&apb_pclk>;
             clock-names = "SSPCLK", "apb_pclk";
         };
@@ -254,7 +253,7 @@
             #size-cells = <0>;
             compatible = "arm,pl022", "arm,primecell";
             reg = <0x080A7000 0x1000>;
-            interrupts = <95>;
+            interrupts = <0 63 4>;
             clocks = <&apb_pclk>, <&apb_pclk>;
             clock-names = "SSPCLK", "apb_pclk";
         };
@@ -264,7 +263,7 @@
             #size-cells = <0>;
             compatible = "arm,pl022", "arm,primecell";
             reg = <0x080A8000 0x1000>;
-            interrupts = <96>;
+            interrupts = <0 64 4>;
             clocks = <&apb_pclk>, <&apb_pclk>;
             clock-names = "SSPCLK", "apb_pclk";
         };
@@ -272,67 +271,46 @@
 		gpio0: gpio@080a9000 {
 			#address-cells = <1>;
 			#size-cells = <0>;
-			compatible = "snps,dw-apb-gpio";
+			compatible = "arm,pl061", "arm,primecell";
 			reg = <0x080a9000 0x1000>;
 			clocks = <&apb_pclk>;
-			status = "disabled";
-
-			porta: gpio-controller@0 {
-				compatible = "snps,dw-apb-gpio-port";
-				gpio-controller;
-				#gpio-cells = <2>;
-				snps,nr-gpios = <8>;
-				reg = <0>;
-				interrupt-controller;
-				#interrupt-cells = <2>;
-				interrupts = <0 68 4>;
-			};
+			clock-names = "apb_pclk";
+			gpio-controller;
+			#gpio-cells = <2>;
+			#interrupt-cells = <2>;
+			interrupts = <0 36 4>;
 		};
 
 		gpio1: gpio@080aa000 {
 			#address-cells = <1>;
 			#size-cells = <0>;
-			compatible = "snps,dw-apb-gpio";
+			compatible = "arm,pl061", "arm,primecell";
 			reg = <0x080aa000 0x1000>;
 			clocks = <&apb_pclk>;
-			status = "disabled";
-
-			portb: gpio-controller@0 {
-				compatible = "snps,dw-apb-gpio-port";
-				gpio-controller;
-				#gpio-cells = <2>;
-				snps,nr-gpios = <8>;
-				reg = <0>;
-				interrupt-controller;
-				#interrupt-cells = <2>;
-				interrupts = <0 76 4>;
-			};
+			clock-names = "apb_pclk";
+			gpio-controller;
+			#gpio-cells = <2>;
+			#interrupt-cells = <2>;
+			interrupts = <0 44 4>;
 		};
 
 		gpio2: gpio@080ab000 {
 			#address-cells = <1>;
 			#size-cells = <0>;
-			compatible = "snps,dw-apb-gpio";
+			compatible = "arm,pl061", "arm,primecell";
 			reg = <0x080ab000 0x1000>;
 			clocks = <&apb_pclk>;
-			status = "disabled";
-
-			portc: gpio-controller@0 {
-				compatible = "snps,dw-apb-gpio-port";
-				gpio-controller;
-				#gpio-cells = <2>;
-				snps,nr-gpios = <8>;
-				reg = <0>;
-				interrupt-controller;
-				#interrupt-cells = <2>;
-				interrupts = <0 84 4>;
-			};
+			clock-names = "apb_pclk";
+			gpio-controller;
+			#gpio-cells = <2>;
+			#interrupt-cells = <2>;
+			interrupts = <0 52 4>;
 		};
 
 		L2: l2-cache@080d1000 {
 			compatible = "arm,pl310-cache";
 			reg = <0x080d1000 0x1000>;
-			interrupts = <0 60 0x04>;
+			interrupts = <0 28 0x04>;
 			cache-unified;
 			cache-level = <2>;
 			arm,tag-latency = <1 1 1>;
@@ -344,7 +322,7 @@
             bus-width = <4>;   
             max-frequency = <48000000>;    
             reg = <0x080D0000 0x1000>;
-            interrupts = <0 105  4>;
+            interrupts = <0 73 4>;
             interrupt-parent = <&intc>;
             /* clocks = <&clkc 21>, <&clkc 32>; */
             clock-frequency = <48000000>;

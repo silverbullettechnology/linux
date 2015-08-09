@@ -81,15 +81,17 @@
 	status = "okay";
 
     /* TBD */
-	max31725@68 {
+	max31725@48 {
 		compatible = "maxim,max31725";
-		reg = <0x68>;
+		reg = <0x48>;
 	};
 };
 
 &ssp0 {
-    fsl,spi-num-chipselects = <2>;
-    cs-gpios = <&gpio0 3 0>, <&gpio0 7 0>;
+    status = "disabled";
+    num-cs = <2>;
+    /* Incorrect: change to GPIO33 in MRU once driver written */
+    /* cs-gpios = <&gpio0 3 0>, <&gpio0 7 0>; */
     flash: m25p80@0 {
         compatible = "sst,sst25vf032b", "st,m25p80";
         spi-max-frequency = <20000000>;
@@ -100,7 +102,22 @@
         spi-max-frequency = <20000000>;
         reg = <1>;
     };
-    
+};
+
+&ssp1 {
+	status = "disabled";
+};
+
+&ssp2 {
+	status = "disabled";
+};
+
+&ssp3 {
+	status = "disabled";
+};
+
+&ssp4 {
+	status = "disabled";
 };
 
 &usb0 {
