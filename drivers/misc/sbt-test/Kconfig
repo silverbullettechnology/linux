@@ -1,0 +1,7 @@
+config SBT_TEST
+	tristate "SBT test stubs"
+	help
+	  Test stubs for S3MA bringup.
+
+	  If unsure, say N
+

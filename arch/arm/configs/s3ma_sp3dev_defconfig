@@ -951,6 +951,7 @@ CONFIG_EEPROM_AT25=y
 #
 # CONFIG_ECHO is not set
 # CONFIG_CXL_BASE is not set
+CONFIG_SBT_TEST=y
 
 #
 # SCSI device support
@@ -1211,6 +1212,7 @@ CONFIG_UNIX98_PTYS=y
 # CONFIG_SERIAL_NONSTANDARD is not set
 # CONFIG_N_GSM is not set
 # CONFIG_TRACE_SINK is not set
+CONFIG_DEVMEM=y
 # CONFIG_DEVKMEM is not set
 
 #
@@ -2980,7 +2982,7 @@ CONFIG_NLS_ISO8859_1=y
 #
 # printk and dmesg options
 #
-# CONFIG_PRINTK_TIME is not set
+CONFIG_PRINTK_TIME=y
 CONFIG_MESSAGE_LOGLEVEL_DEFAULT=4
 # CONFIG_BOOT_PRINTK_DELAY is not set
 # CONFIG_DYNAMIC_DEBUG is not set

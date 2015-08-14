@@ -135,6 +135,6 @@
 };
 
 &pdma {
-	status = "disabled";
+	status = "okay";
 };
 
