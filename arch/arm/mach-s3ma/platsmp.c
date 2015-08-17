@@ -23,6 +23,7 @@
 #include <linux/io.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
+#include <linux/irqchip/arm-gic.h>
 
 #include <asm/cacheflush.h>
 #include <asm/smp_scu.h>
@@ -87,10 +88,10 @@ int s3ma_cpun_start(u32 address, int cpu)
 				iounmap(zero);
 		}
 
-		// TODO: restart cpu n in reset
-		// Currently assumes that after wfi instruction the core will reset to 0
-		arch_send_wakeup_ipi_mask(cpumask_of(cpu));
-
+		/* Since arch_send_wakeup_ipi_mask() takes logical CPU numbers and early in the
+		 * boot the GIC map isn't setup, using it for this spams wakeup IRQs to all the
+		 * other CPU cores.  Instead use the GIC directly to wakeup each core in order */
+		writel_relaxed(0x10000 << cpu, s3ma_gic_dist_base + GIC_DIST_SOFTINT);
 		return 0;
 	}
 

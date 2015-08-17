@@ -24,6 +24,7 @@
 
 extern void __iomem *s3ma_scu_base_addr;
 extern void __iomem *s3ma_mru_base_addr;
+extern void __iomem *s3ma_gic_dist_base;
 
 extern void s3ma_init_clocks(void);
 extern void s3ma_mcu_init(void);
@@ -40,5 +41,6 @@ extern struct smp_operations s3ma_smp_ops;
 #define S3MA_SCU_VIRT_BASE   0xf8000000
 #define S3MA_MRU_VIRT_BASE   0xf8002000
 #define S3MA_UART0_VIRT_BASE 0xf8004000
+#define S3MA_GIC_DIST_BASE   0xf8006000
 
 #endif

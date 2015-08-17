@@ -23,7 +23,7 @@
 
 / {
 	model = "Exelis S3MA SP3 Development Board";
-	compatible = "exelis,s3ma_sp3dev";
+	compatible = "exelis,s3ma-sp3dev";
 
 	chosen {
 		bootargs = "console=ttyAMA0,115200";

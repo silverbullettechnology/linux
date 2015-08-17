@@ -35,6 +35,7 @@
 
 void __iomem *s3ma_scu_base_addr = ((void __iomem *)(S3MA_SCU_VIRT_BASE));
 void __iomem *s3ma_mru_base_addr = ((void __iomem *)(S3MA_MRU_VIRT_BASE));
+void __iomem *s3ma_gic_dist_base = ((void __iomem *)(S3MA_GIC_DIST_BASE));
 
 static struct map_desc v2p_io_desc[] __initdata = {
 	{
@@ -57,6 +58,12 @@ static struct map_desc v2p_io_desc[] __initdata = {
 		.type		= MT_DEVICE,
 	},
 #endif
+	{
+		.virtual	= S3MA_GIC_DIST_BASE,
+		.pfn		= __phys_to_pfn(IDIST_ABSOLUTE_BASE),
+		.length		= SZ_4K,
+		.type		= MT_DEVICE,
+	},
 };
 
 
