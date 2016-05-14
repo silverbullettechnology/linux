@@ -53,6 +53,7 @@
  */
 #define XILINX_DMA_CR_RESET_MASK    0x00000004  /* Reset DMA engine */
 #define XILINX_DMA_CR_RUNSTOP_MASK  0x00000001  /* Start/stop DMA engine */
+#define XILINX_DMA_CR_CYCLIC_MASK   0x00000010  /* Cyclic BD Enable */
 
 #define XILINX_DMA_SR_HALTED_MASK   0x00000001  /* DMA channel halted */
 #define XILINX_DMA_SR_IDLE_MASK     0x00000002  /* DMA channel idle */
@@ -638,6 +639,7 @@ static void xilinx_dma_start_transfer(struct xilinx_dma_chan *chan)
 
 	if (chan->has_SG) {
 		uint32_t status;
+		uint32_t control;
 		last_transfer = list_entry(chan->pending_list.prev,
 				struct xilinx_dma_transfer, head);
 
@@ -646,16 +648,33 @@ static void xilinx_dma_start_transfer(struct xilinx_dma_chan *chan)
 
 		DMA_OUT(&chan->regs->cdr, first_addr);
 
+		/* Set or clear hardware cyclic bit based on this transfer's flags.  For hardware
+		 * cyclic mode, PG021 recommends
+		 *   Program the Tail Descriptor register with some value which is not a part of
+		 *   the BD chain.
+		 * In the cyclic example they set it to 0x50, which is not aligned to the 64-byte
+		 * requirement.
+		 */
+		control  = DMA_IN(&chan->regs->cr);
+		control &= ~(XILINX_DMA_XR_IRQ_ALL_MASK|XILINX_DMA_CR_CYCLIC_MASK);
+		if ( first_transfer->async_tx.flags & DMA_PREP_CYCLIC_SG ) {
+			control |= XILINX_DMA_CR_CYCLIC_MASK;
+			last_addr = 0x50;
+		}
+		DMA_OUT(&chan->regs->cr, control);
+
 		dma_start(chan);
 
 		if (chan->err)
 			goto out_unlock;
 		list_splice_tail_init(&chan->pending_list, &chan->active_list);
 
-		/* Clear pending interrupts and enable interrupts */
+		/* Clear pending interrupts and enable interrupts if not doing CYCLIC_SG */
 		DMA_OUT(&chan->regs->sr, XILINX_DMA_XR_IRQ_ALL_MASK);
-		DMA_OUT(&chan->regs->cr,
-			DMA_IN(&chan->regs->cr) | XILINX_DMA_XR_IRQ_ALL_MASK);
+		if ( !(first_transfer->async_tx.flags & DMA_PREP_CYCLIC_SG) ) {
+			control |= XILINX_DMA_XR_IRQ_ALL_MASK;
+			DMA_OUT(&chan->regs->cr, control);
+		}
 		status = DMA_IN(&chan->regs->sr);
 		/* Update tail ptr register and start the transfer
 		*/
@@ -1188,6 +1207,8 @@ static int xilinx_dma_terminate_all(struct xilinx_dma_chan *chan)
 	unsigned long flags;
 	/* Disable intr
 	 */
+// TODO: get current transfer to check for CYCLIC_SG, if set enable IRQs before finishing
+// so the standard callback fires at the end.
 /*
 	DMA_OUT(&chan->regs->cr,
 	   DMA_IN(&chan->regs->cr) & ~XILINX_DMA_XR_IRQ_ALL_MASK);
@@ -1526,6 +1547,7 @@ static int xilinx_dma_of_probe(struct platform_device *pdev)
 		dma_cap_set(DMA_SLAVE, xdev->common.cap_mask);
 		dma_cap_set(DMA_PRIVATE, xdev->common.cap_mask);
 		dma_cap_set(DMA_CYCLIC, xdev->common.cap_mask);
+		dma_cap_set(DMA_CYCLIC_SG, xdev->common.cap_mask);
 		xdev->common.device_prep_slave_sg = xilinx_dma_prep_slave_sg;
 		xdev->common.device_prep_dma_cyclic = xilinx_dma_prep_dma_cyclic;
 		xdev->common.device_control = xilinx_dma_device_control;

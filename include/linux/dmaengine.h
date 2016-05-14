@@ -76,6 +76,7 @@ enum dma_transaction_type {
 	DMA_SLAVE,
 	DMA_CYCLIC,
 	DMA_INTERLEAVE,
+	DMA_CYCLIC_SG,	/* Cyclic scatter-gather */
 /* last transaction type for creation of the capabilities mask */
 	DMA_TX_TYPE_END,
 };
@@ -184,6 +185,9 @@ struct dma_interleaved_template {
  *  operation it continues the calculation with new sources
  * @DMA_PREP_FENCE - tell the driver that subsequent operations depend
  *  on the result of this operation
+ * @DMA_PREP_CYCLIC_SG - prep a cyclic scatter-gather DMA, which usually means chaining
+ *  the last descriptor back to the first and programming hardware appropriately.  Once
+ *  started the transfer will run continuously until stopped with DMA_TERMINATE_ALL.
  */
 enum dma_ctrl_flags {
 	DMA_PREP_INTERRUPT = (1 << 0),
@@ -196,6 +200,7 @@ enum dma_ctrl_flags {
 	DMA_PREP_PQ_DISABLE_Q = (1 << 7),
 	DMA_PREP_CONTINUE = (1 << 8),
 	DMA_PREP_FENCE = (1 << 9),
+	DMA_PREP_CYCLIC_SG = (1 << 10),
 };
 
 /**
