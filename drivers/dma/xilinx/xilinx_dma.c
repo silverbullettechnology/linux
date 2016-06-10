@@ -95,6 +95,9 @@
 #define XILINX_DMA_COALESCE_MAX		255
 #define XILINX_DMA_NUM_APP_WORDS	5
 
+/* Device Id in the private structure */
+#define XILINX_DMA_DEVICE_ID_SHIFT  28
+
 #define mm2s_mcdmatx_control(tdest, tid, tuser, axcache, aruser) \
 			     ((aruser << 28) | (axcache << 24) | \
 			     (tuser << 16) | (tid << 8) | (tdest))
@@ -204,6 +207,7 @@ struct xilinx_dma_chan {
 	struct tasklet_struct tasklet;
 	u32 residue;
 	u32 desc_pendingcount;
+	u32 private;
 };
 
 /**
@@ -749,6 +753,31 @@ static void xilinx_dma_issue_pending(struct dma_chan *dchan)
 	spin_lock_irqsave(&chan->lock, flags);
 	xilinx_dma_start_transfer(chan);
 	spin_unlock_irqrestore(&chan->lock, flags);
+}
+
+static int xilinx_dma_slave_caps (struct dma_chan *dchan, struct dma_slave_caps *caps)
+{
+	struct xilinx_dma_chan *chan = to_xilinx_chan(dchan);
+
+	caps->src_addr_widths = 0;
+	switch ( chan->feature & XILINX_DMA_FTR_DATA_WIDTH_MASK ) {
+	case 0:  caps->src_addr_widths = 1 << DMA_SLAVE_BUSWIDTH_1_BYTE;    break;
+	case 1:  caps->src_addr_widths = 1 << DMA_SLAVE_BUSWIDTH_2_BYTES;   break;
+	case 3:  caps->src_addr_widths = 1 << DMA_SLAVE_BUSWIDTH_4_BYTES;   break;
+	case 7:  caps->src_addr_widths = 1 << DMA_SLAVE_BUSWIDTH_8_BYTES;   break;
+	default: caps->src_addr_widths = 1 << DMA_SLAVE_BUSWIDTH_UNDEFINED; break;
+	}
+	caps->dstn_addr_widths = caps->src_addr_widths;
+
+	switch ( chan->direction ) {
+	case DMA_MEM_TO_DEV: caps->directions = 1 << DMA_MEM_TO_DEV; break;
+	case DMA_DEV_TO_MEM: caps->directions = 1 << DMA_DEV_TO_MEM; break;
+	default:             caps->directions = 0;                   break;
+	}
+	caps->cmd_pause = false;
+	caps->cmd_terminate = false;
+
+	return 0;
 }
 
 /**
@@ -1328,6 +1357,7 @@ static int xilinx_dma_chan_probe(struct xilinx_dma_device *xdev,
 	struct xilinx_dma_chan *chan;
 	int err;
 	bool has_dre;
+	u32 device_id = 0;
 	u32 value, width = 0;
 
 	/* alloc channel */
@@ -1354,6 +1384,11 @@ static int xilinx_dma_chan_probe(struct xilinx_dma_device *xdev,
 	/* If data width is greater than 8 bytes, DRE is not in hw */
 	if (width > 8)
 		has_dre = false;
+
+	of_property_read_u32(node, "xlnx,device-id", &device_id);
+	chan->private = (chan->direction & 0xFF) |
+	                (device_id << XILINX_DMA_DEVICE_ID_SHIFT);
+	chan->common.private = &chan->private;
 
 	if (!has_dre)
 		xdev->common.copy_align = fls(width - 1);
@@ -1508,6 +1543,8 @@ static int xilinx_dma_probe(struct platform_device *pdev)
 	xdev->common.residue_granularity = DMA_RESIDUE_GRANULARITY_SEGMENT;
 	xdev->common.dev = &pdev->dev;
 	xdev->chan_id = 0;
+
+	xdev->common.device_slave_caps = xilinx_dma_slave_caps;
 
 	platform_set_drvdata(pdev, xdev);
 
