@@ -132,6 +132,8 @@ struct axi_dmac {
 	void *test_virt;
 	dma_addr_t test_phys;
 #endif
+
+	u32 device_id;
 };
 
 static struct axi_dmac *chan_to_axi_dmac(struct axi_dmac_chan *chan)
@@ -721,6 +723,7 @@ static int axi_dmac_probe(struct platform_device *pdev)
 	struct dma_device *dma_dev;
 	struct axi_dmac *dmac;
 	struct resource *res;
+	u32 buswidth;
 	int ret;
 
 	dmac = devm_kzalloc(&pdev->dev, sizeof(*dmac), GFP_KERNEL);
@@ -762,6 +765,14 @@ static int axi_dmac_probe(struct platform_device *pdev)
 	pdev->dev.dma_parms = &dmac->dma_parms;
 	dma_set_max_seg_size(&pdev->dev, dmac->chan.max_length);
 
+	buswidth = 0;
+	of_property_read_u32(of_chan, "sbt,buswidth", &buswidth);
+	if ( !buswidth || (buswidth & 0x07) ) {
+		pr_warn("empty/zero/invalid sbt,buswidth %u interpreted as 64\n", buswidth);
+		buswidth = 64;
+	}
+	pr_debug("buswidth %u -> copy_align %u\n", buswidth, ilog2(buswidth >> 3));
+
 	dma_dev = &dmac->dma_dev;
 	dma_cap_set(DMA_SLAVE, dma_dev->cap_mask);
 	dma_cap_set(DMA_CYCLIC, dma_dev->cap_mask);
@@ -784,6 +795,15 @@ static int axi_dmac_probe(struct platform_device *pdev)
 	dmac->chan.vchan.desc_free = axi_dmac_desc_free;
 	vchan_init(&dmac->chan.vchan, dma_dev);
 
+	if ( !dmac->chan.vchan.chan.device )
+		pr_warn("Still no dmac->chan.vchan.chan.device...\n");
+	else
+		dmac->chan.vchan.chan.device->copy_align = ilog2(buswidth >> 3);
+
+	dmac->device_id = 0;
+	of_property_read_u32(of_chan, "sbt,device-id", &dmac->device_id);
+	dmac->chan.vchan.chan.private = &dmac->device_id;
+ 
 	ret = clk_prepare_enable(dmac->clk);
 	if (ret < 0)
 		return ret;
