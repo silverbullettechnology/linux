@@ -323,6 +323,14 @@ static struct gen_pool *atomic_pool;
 
 static size_t atomic_pool_size = DEFAULT_DMA_COHERENT_POOL_SIZE;
 
+#ifdef CONFIG_ARCH_HAS_ATOMIC_POOL_SIZE
+size_t __atomic_pool_size (void)
+{
+	return atomic_pool_size;
+}
+EXPORT_SYMBOL(__atomic_pool_size);
+#endif
+
 static int __init early_coherent_pool(char *p)
 {
 	atomic_pool_size = memparse(p, &p);

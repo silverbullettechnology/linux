@@ -1,6 +1,7 @@
 config ARCH_ZYNQ
 	bool "Xilinx Zynq ARM Cortex A9 Platform" if ARCH_MULTI_V7
 	select ARCH_SUPPORTS_BIG_ENDIAN
+	select ARCH_HAS_ATOMIC_POOL_SIZE
 	select ARM_AMBA
 	select ARM_GIC
 	select ARM_GLOBAL_TIMER if !CPU_FREQ

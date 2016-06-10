@@ -318,4 +318,8 @@ static inline int dma_mmap_writecombine(struct device *dev,
 #define dma_unmap_len_set(PTR, LEN_NAME, VAL)    do { } while (0)
 #endif
 
+#ifdef CONFIG_ARCH_HAS_ATOMIC_POOL_SIZE
+size_t __atomic_pool_size (void);
+#endif
+
 #endif
