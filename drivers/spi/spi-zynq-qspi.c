@@ -676,6 +676,7 @@ static int zynq_qspi_probe(struct platform_device *pdev)
 	struct zynq_qspi *xqspi;
 	struct resource *res;
 	u32 num_cs;
+	u32 bus_num;
 
 	master = spi_alloc_master(&pdev->dev, sizeof(*xqspi));
 	if (master == NULL)
@@ -745,6 +746,9 @@ static int zynq_qspi_probe(struct platform_device *pdev)
 		master->num_chipselect = ZYNQ_QSPI_DEFAULT_NUM_CS;
 	else
 		master->num_chipselect = num_cs;
+
+	if ( !of_property_read_u32(pdev->dev.of_node, "bus-num", &bus_num) )
+		master->bus_num = bus_num & 0xFFFF;
 
 	master->setup = zynq_qspi_setup;
 	master->set_cs = zynq_qspi_chipselect;

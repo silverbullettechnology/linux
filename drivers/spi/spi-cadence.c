@@ -20,6 +20,7 @@
 #include <linux/of_address.h>
 #include <linux/platform_device.h>
 #include <linux/spi/spi.h>
+#include <linux/gpio.h>
 
 /* Name of this driver */
 #define CDNS_SPI_NAME		"cdns-spi"
@@ -263,7 +264,7 @@ static void cdns_spi_config_clock_freq(struct spi_device *spi,
 	ctrl_reg = cdns_spi_read(xspi, CDNS_SPI_CR_OFFSET);
 
 	/* Set the clock frequency */
-	if (xspi->speed_hz != transfer->speed_hz) {
+	if (xspi->speed_hz != transfer->speed_hz || !(ctrl_reg & CDNS_SPI_CR_BAUD_DIV_MASK)) {
 		/* first valid value is 1 */
 		baud_rate_val = CDNS_SPI_BAUD_DIV_MIN;
 		while ((baud_rate_val < CDNS_SPI_BAUD_DIV_MAX) &&
@@ -446,6 +447,49 @@ static int cdns_prepare_transfer_hardware(struct spi_master *master)
 	return 0;
 }
 
+static int cdns_setup (struct spi_device *spi)
+{
+	if ( spi->cs_gpio >= 0 && !spi->controller_data ) {
+		int ret, value;
+
+		if ( !gpio_is_valid(spi->cs_gpio) ) {
+			pr_err("%s: cs_gpio %d is not valid\n",
+			       dev_name(&spi->dev), spi->cs_gpio);
+			return -EINVAL;
+		}
+
+		ret = gpio_request(spi->cs_gpio, dev_name(&spi->dev));
+		if ( ret ) {
+			pr_err("%s: cs_gpio %d request failed: %d\n",
+			       dev_name(&spi->dev), spi->cs_gpio, ret);
+			return ret;
+		}
+
+		value = !(spi->mode & SPI_CS_HIGH);
+		spi->controller_data = spi;
+		gpio_direction_output(spi->cs_gpio, value);
+		pr_debug("%s: cs_gpio %d assigned, set output, init to %d\n",
+		         dev_name(&spi->dev), spi->cs_gpio, value);
+	}
+
+	return 0;
+}
+
+static void cdns_cleanup (struct spi_device *spi)
+{
+	if ( !spi->controller_data || spi->cs_gpio < 0 ) {
+		pr_debug("%s: controller_data %p, cs_gpio %d, skip\n",
+	         dev_name(&spi->dev), spi->controller_data, spi->cs_gpio);
+		return;
+	}
+
+	pr_debug("%s: cs_gpio %d, gpio_free\n",
+	         dev_name(&spi->dev), spi->cs_gpio);
+	spi->controller_data = NULL;
+	gpio_free(spi->cs_gpio);
+}
+
+
 /**
  * cdns_unprepare_transfer_hardware - Relaxes hardware after transfer
  * @master:	Pointer to the spi_master structure which provides
@@ -480,6 +524,7 @@ static int cdns_spi_probe(struct platform_device *pdev)
 	struct cdns_spi *xspi;
 	struct resource *res;
 	unsigned long aper_clk_rate;
+	u32 bus_num;
 	u32 num_cs;
 
 	master = spi_alloc_master(&pdev->dev, sizeof(*xspi));
@@ -558,6 +603,12 @@ static int cdns_spi_probe(struct platform_device *pdev)
 	master->unprepare_transfer_hardware = cdns_unprepare_transfer_hardware;
 	master->set_cs = cdns_spi_chipselect;
 	master->mode_bits = SPI_CPOL | SPI_CPHA;
+
+	master->setup   = cdns_setup;
+	master->cleanup = cdns_cleanup;
+
+	if ( !of_property_read_u32(pdev->dev.of_node, "bus-num", &bus_num) )
+		master->bus_num = bus_num & 0xFFFF;
 
 	/* Set to default valid value */
 	aper_clk_rate = clk_get_rate(xspi->pclk) / 2 * 3;
