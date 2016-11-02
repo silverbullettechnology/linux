@@ -173,8 +173,12 @@ static int axi_dmac_start_transfer(struct axi_dmac_chan *chan)
 	sg = &chan->next_desc->sg[chan->next_desc->num_submitted];
 
 	chan->next_desc->num_submitted++;
-	if (chan->next_desc->num_submitted == chan->next_desc->num_sgs)
-		chan->next_desc = NULL;
+	if (chan->next_desc->num_submitted == chan->next_desc->num_sgs) {
+		if ( chan->next_desc->cyclic )
+			chan->next_desc->num_submitted = 0;
+		else
+			chan->next_desc = NULL;
+	}
 
 	sg->id = axi_dmac_read(dmac, AXI_DMAC_REG_TRANSFER_ID);
 
